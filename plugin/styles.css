@@ -790,6 +790,34 @@
 	font-variant-numeric: tabular-nums;
 }
 
+.ol-settings-quick .ol-settings-group {
+	padding: 0;
+	background: transparent;
+}
+
+.ol-settings-quick .ol-settings-group .setting-item {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+	align-items: center;
+}
+
+.ol-settings-quick .ol-settings-group .setting-item-control {
+	width: 100%;
+	max-width: none;
+}
+
+.ol-settings-quick .ol-settings-group .setting-item-control :is(select, input[type="text"]) {
+	width: 100%;
+}
+
+.ol-settings-quick .ol-settings-actions {
+	padding-block: var(--size-4-3) var(--size-4-2);
+}
+
+.ol-settings-quick .ol-server-guide {
+	padding-bottom: 0;
+}
+
 @container (max-width: 30rem) {
 	.ol-settings .ol-settings-group .setting-item {
 		flex-direction: column;
@@ -804,6 +832,10 @@
 
 	.ol-settings-group .setting-item-control input[type="text"] {
 		width: 100%;
+	}
+
+	.ol-settings-quick .ol-settings-group .setting-item {
+		grid-template-columns: minmax(0, 1fr);
 	}
 }
 
