@@ -1224,7 +1224,7 @@ function renderLibrarySettings(container, plugin, onSuccess) {
   let serverAddress = plugin.origin;
   let sourceType = localPath ? "local" : serverAddress ? "server" : "";
   const location = new import_obsidian3.Setting(source).setName("Storage location").setDesc("Choose where your books are stored.");
-  const fields = source.createDiv("ol-source-fields");
+  const fields = source.createDiv("ol-source-fields ol-settings-divider");
   location.addDropdown((selector) => {
     selector.addOption("", "Choose a source");
     if (!import_obsidian3.Platform.isMobile) selector.addOption("local", "Local folder");
@@ -1243,7 +1243,7 @@ function renderLibrarySettings(container, plugin, onSuccess) {
         if (!local) input.inputEl.inputMode = "url";
         input.inputEl.spellcheck = false;
         input.inputEl.setAttribute("aria-label", local ? "PDF folder" : "Server address");
-        const actions = fields.createDiv("ol-settings-actions");
+        const actions = fields.createDiv("ol-settings-actions ol-settings-divider");
         const status = actions.createDiv({ cls: "ol-source-status", attr: { role: "status" } });
         const setState = (state, message) => {
           status.dataset.state = state;
@@ -1352,7 +1352,9 @@ function renderLibrarySettings(container, plugin, onSuccess) {
       save();
     }));
   });
-  new import_obsidian3.Setting(notes).setName("Note template").setDesc("Optional Markdown template.").addButton((select) => {
+  const template = new import_obsidian3.Setting(notes).setName("Note template").setDesc("Optional Markdown template.");
+  template.settingEl.addClass("ol-settings-divider");
+  template.addButton((select) => {
     select.buttonEl.addClass("ol-template-select");
     const clear = select.buttonEl.parentElement?.createEl("button", {
       cls: "ol-settings-icon",
@@ -1403,6 +1405,7 @@ function renderLibrarySettings(container, plugin, onSuccess) {
   }
   sync();
   const coverSize = new import_obsidian3.Setting(appearance).setName("Cover size").setDesc("Adjust the size of book covers.");
+  coverSize.settingEl.addClass("ol-settings-divider");
   const sizeLabel = coverSize.controlEl.createSpan({ cls: "ol-cover-size-value", text: plugin.appearance.coverSize + "px" });
   coverSize.addSlider((slider) => {
     slider.sliderEl.setAttribute("aria-label", "Cover size");
@@ -1413,7 +1416,9 @@ function renderLibrarySettings(container, plugin, onSuccess) {
       changeAppearance();
     });
   });
-  new import_obsidian3.Setting(appearance).setName("Show reading progress").setDesc("Display progress below book covers.").addToggle((toggle) => {
+  const progress = new import_obsidian3.Setting(appearance).setName("Show reading progress").setDesc("Display progress below book covers.");
+  progress.settingEl.addClass("ol-settings-divider");
+  progress.addToggle((toggle) => {
     toggle.toggleEl.setAttribute("aria-label", "Show reading progress");
     toggle.setValue(plugin.appearance.showProgress).onChange((value) => {
       plugin.appearance.showProgress = value;

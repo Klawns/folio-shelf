@@ -766,7 +766,7 @@ export function renderLibrarySettings(container: HTMLElement, plugin: LibraryPlu
 	let serverAddress = plugin.origin;
 	let sourceType = localPath ? "local" : serverAddress ? "server" : "";
 	const location = new Setting(source).setName("Storage location").setDesc("Choose where your books are stored.");
-	const fields = source.createDiv("ol-source-fields");
+	const fields = source.createDiv("ol-source-fields ol-settings-divider");
 	location.addDropdown(selector => {
 		selector.addOption("", "Choose a source");
 		if (!Platform.isMobile) selector.addOption("local", "Local folder");
@@ -787,7 +787,7 @@ export function renderLibrarySettings(container: HTMLElement, plugin: LibraryPlu
 				if (!local) input.inputEl.inputMode = "url";
 				input.inputEl.spellcheck = false;
 				input.inputEl.setAttribute("aria-label", local ? "PDF folder" : "Server address");
-				const actions = fields.createDiv("ol-settings-actions");
+				const actions = fields.createDiv("ol-settings-actions ol-settings-divider");
 				const status = actions.createDiv({ cls: "ol-source-status", attr: { role: "status" } });
 				const setState = (state: string, message: string) => {
 					status.dataset.state = state;
@@ -894,8 +894,9 @@ export function renderLibrarySettings(container: HTMLElement, plugin: LibraryPlu
 				save();
 			}));
 		});
-	new Setting(notes).setName("Note template").setDesc("Optional Markdown template.")
-		.addButton(select => {
+	const template = new Setting(notes).setName("Note template").setDesc("Optional Markdown template.");
+	template.settingEl.addClass("ol-settings-divider");
+	template.addButton(select => {
 			select.buttonEl.addClass("ol-template-select");
 			const clear = select.buttonEl.parentElement?.createEl("button", {
 				cls: "ol-settings-icon", attr: { "aria-label": "Clear note template" },
@@ -942,6 +943,7 @@ export function renderLibrarySettings(container: HTMLElement, plugin: LibraryPlu
 	}
 	sync();
 	const coverSize = new Setting(appearance).setName("Cover size").setDesc("Adjust the size of book covers.");
+	coverSize.settingEl.addClass("ol-settings-divider");
 	const sizeLabel = coverSize.controlEl.createSpan({ cls: "ol-cover-size-value", text: plugin.appearance.coverSize + "px" });
 	coverSize.addSlider(slider => {
 		slider.sliderEl.setAttribute("aria-label", "Cover size");
@@ -953,8 +955,9 @@ export function renderLibrarySettings(container: HTMLElement, plugin: LibraryPlu
 				changeAppearance();
 			});
 	});
-	new Setting(appearance).setName("Show reading progress").setDesc("Display progress below book covers.")
-		.addToggle(toggle => {
+	const progress = new Setting(appearance).setName("Show reading progress").setDesc("Display progress below book covers.");
+	progress.settingEl.addClass("ol-settings-divider");
+	progress.addToggle(toggle => {
 			toggle.toggleEl.setAttribute("aria-label", "Show reading progress");
 			toggle.setValue(plugin.appearance.showProgress)
 				.onChange(value => { plugin.appearance.showProgress = value; changeAppearance(); });

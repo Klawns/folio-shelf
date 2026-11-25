@@ -568,6 +568,19 @@
 	padding-inline: var(--size-4-4);
 }
 
+.ol-settings-page > :is(header, .ol-settings-section),
+.ol-settings-section > h3,
+.ol-settings-section > .ol-settings-group {
+	margin-inline: 0;
+}
+
+.ol-settings-page > header,
+.ol-settings-section,
+.ol-settings-section > h3 {
+	padding-inline: 0;
+	text-align: start;
+}
+
 .ol-settings-page > header h2 {
 	margin: 0 0 6px;
 	color: var(--text-normal);
@@ -606,7 +619,7 @@
 	background: var(--background-secondary);
 }
 
-.ol-settings-group .setting-item {
+.ol-settings .ol-settings-group .setting-item {
 	min-height: 56px;
 	margin: 0;
 	padding: var(--size-4-3) 0;
@@ -633,16 +646,17 @@
 	font-size: 13px;
 }
 
-.ol-settings-group :is(.setting-item + .setting-item, .ol-source-fields:not(:empty), .ol-settings-actions) {
+.ol-settings .ol-settings-divider:not(:empty) {
 	position: relative;
 }
 
-.ol-settings-group :is(.setting-item + .setting-item, .ol-source-fields:not(:empty), .ol-settings-actions)::before {
+.ol-settings .ol-settings-divider:not(:empty)::before {
 	content: "";
 	position: absolute;
-	inset: 0 var(--size-4-2) auto;
+	inset: 0 0 auto;
 	height: 1px;
 	background: color-mix(in srgb, var(--background-modifier-border) 50%, transparent);
+	pointer-events: none;
 }
 
 .ol-settings-group .setting-item-control {
@@ -777,7 +791,7 @@
 }
 
 @container (max-width: 30rem) {
-	.ol-settings-group .setting-item {
+	.ol-settings .ol-settings-group .setting-item {
 		flex-direction: column;
 		align-items: stretch;
 		gap: var(--size-4-2);
