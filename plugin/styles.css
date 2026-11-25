@@ -61,6 +61,7 @@
 }
 
 .ol-filters {
+	margin-top: var(--size-4-3);
 	margin-bottom: var(--size-4-3);
 }
 
@@ -270,6 +271,15 @@
 .ol-progress progress::-webkit-progress-value {
 	background: var(--interactive-accent);
 	border-radius: var(--radius-s);
+}
+
+.ol-resume-section:not(:empty) {
+	padding-bottom: var(--size-4-3);
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.ol-library .ol-resume-section:not(:empty) + .ol-section-heading {
+	margin-top: var(--size-4-3);
 }
 
 .ol-resume {

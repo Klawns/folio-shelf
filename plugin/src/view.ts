@@ -62,17 +62,6 @@ export class LibraryView extends ItemView {
 		this.connectionButton.addClass("ol-connection");
 		this.summary = root.createDiv("ol-secondary");
 		this.message = root.createDiv({ cls: "ol-message", attr: { role: "status" } });
-		this.resume = root.createDiv();
-		const heading = root.createDiv("ol-toolbar ol-section-heading");
-		const allBooks = heading.createEl("h3", { text: "All books" });
-		this.resultCount = allBooks.createSpan({ cls: "ol-result-count ol-secondary" });
-		for (const [layout, label, icon] of [["grid", "Grid", "layout-grid"], ["list", "List", "list"]] as const) {
-			this.layoutButtons.set(layout, this.iconButton(heading, label, icon, async () => {
-				this.plugin.appearance.layout = layout;
-				this.plugin.redraw();
-				await this.plugin.saveSettings();
-			}));
-		}
 		const toolbar = root.createDiv("ol-toolbar ol-filters");
 		const search = toolbar.createEl("input", { type: "search", placeholder: "Search by title or author",
 			attr: { "aria-label": "Search by title or author" } });
@@ -101,6 +90,17 @@ export class LibraryView extends ItemView {
 			this.reset();
 			search.focus();
 		};
+		this.resume = root.createDiv("ol-resume-section");
+		const heading = root.createDiv("ol-toolbar ol-section-heading");
+		const allBooks = heading.createEl("h3", { text: "All books" });
+		this.resultCount = allBooks.createSpan({ cls: "ol-result-count ol-secondary" });
+		for (const [layout, label, icon] of [["grid", "Grid", "layout-grid"], ["list", "List", "list"]] as const) {
+			this.layoutButtons.set(layout, this.iconButton(heading, label, icon, async () => {
+				this.plugin.appearance.layout = layout;
+				this.plugin.redraw();
+				await this.plugin.saveSettings();
+			}));
+		}
 		this.body = root.createDiv();
 		this.isRenderingEnabled = true;
 		await this.render();
