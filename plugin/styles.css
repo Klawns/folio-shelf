@@ -193,9 +193,9 @@
 }
 
 .ol-toolbar button.ol-connection {
-	width: 30px;
-	height: 30px;
-	padding: 0;
+	display: inline-flex;
+	align-items: center;
+	gap: 0.5em;
 }
 
 .ol-connection::before {
@@ -203,11 +203,71 @@
 	display: block;
 	width: 10px;
 	height: 10px;
-	margin: auto;
+	flex: none;
 	border-radius: 50%;
 	background: var(--color-red);
 }
 
 .ol-connection[data-connected="true"]::before {
 	background: var(--color-green);
+}
+
+.ol-settings {
+	display: grid;
+	gap: 16px;
+}
+
+.ol-settings-section {
+	padding: 16px;
+	min-width: 0;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	background: var(--background-secondary);
+}
+
+.ol-settings-section h3 {
+	margin: 0 0 12px;
+}
+
+.ol-settings :is(select, input) {
+	width: 100%;
+	min-width: 0;
+}
+
+.ol-source-fields:not(:empty) {
+	margin-top: 16px;
+}
+
+.ol-source-fields label {
+	display: grid;
+	gap: 6px;
+	font-weight: var(--font-medium);
+}
+
+.ol-source-fields summary {
+	cursor: pointer;
+}
+
+.ol-settings-help,
+.ol-settings-actions [role="status"] {
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+	overflow-wrap: anywhere;
+}
+
+.ol-settings-actions {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 8px 12px;
+	margin-top: 12px;
+}
+
+.ol-settings .setting-item {
+	display: grid;
+	gap: 8px;
+}
+
+.ol-settings .setting-item-control {
+	justify-content: flex-start;
 }

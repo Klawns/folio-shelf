@@ -156,11 +156,15 @@ export class LibraryStorage {
 	}
 
 	private async writeReference(book: Book, path: string): Promise<TFile> {
+		const contents = new TextEncoder().encode(book.readUrl);
+		if (book.source === "local" && (!book.readUrl.startsWith("file:///") || contents.length > 300)) {
+			throw new Error("PDF++ cannot open this file path. Use a shorter path on a local or mapped drive.");
+		}
 		await this.ensureFolder(path.slice(0, path.lastIndexOf("/")));
 		let file = this.app.vault.getAbstractFileByPath(path);
 		if (!file) {
 			try {
-				return await this.app.vault.createBinary(path, new TextEncoder().encode(book.readUrl).buffer);
+				return await this.app.vault.createBinary(path, contents.buffer);
 			} catch (error) {
 				file = this.app.vault.getAbstractFileByPath(path);
 				if (!(file instanceof TFile)) throw error;
@@ -180,7 +184,7 @@ export class LibraryStorage {
 			if (old !== oldOrigin + "/api/v1/books/" + book.id + "/file" || !old.startsWith("https://")) {
 				throw new Error("The existing file is not a library reference.");
 			}
-			await this.app.vault.modifyBinary(file, new TextEncoder().encode(book.readUrl).buffer);
+			await this.app.vault.modifyBinary(file, contents.buffer);
 		}
 		return file;
 	}

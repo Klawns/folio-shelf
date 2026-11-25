@@ -26,6 +26,63 @@ __export(main_exports, {
 module.exports = __toCommonJS(main_exports);
 var import_obsidian4 = require("obsidian");
 
+// local-typescript:C:\Users\Fabricio\Documents\PluginLivrosObsidian\plugin\src\local.ts
+async function scanLocalFolder(input, deviceId) {
+  const fs = require("node:fs/promises");
+  const path = require("node:path");
+  const { pathToFileURL } = require("node:url");
+  const requested = input.trim();
+  if (!path.isAbsolute(requested)) throw new Error("Enter the full path to your PDF folder.");
+  const books = [];
+  let folder;
+  try {
+    folder = await fs.realpath(requested);
+    const pending = [{ directory: folder, categories: [] }];
+    while (pending.length) {
+      const { directory, categories } = pending.pop();
+      const entries = await fs.readdir(directory, { withFileTypes: true });
+      for (const entry of entries) {
+        const absolute = path.join(directory, entry.name);
+        if (entry.isDirectory()) {
+          pending.push({ directory: absolute, categories: [...categories, entry.name] });
+        } else if (entry.isFile() && /\.pdf$/i.test(entry.name)) {
+          const info = await fs.stat(absolute);
+          if (info.size <= 300 && /^(?:https?:\/\/|file:\/\/\/)/.test(await fs.readFile(absolute, "utf8"))) continue;
+          const readUrl = pathToFileURL(absolute).href;
+          const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(deviceId + "\n" + readUrl));
+          const hex = Array.from(new Uint8Array(digest).slice(0, 16), (byte) => byte.toString(16).padStart(2, "0")).join("");
+          const id = [hex.slice(0, 8), hex.slice(8, 12), hex.slice(12, 16), hex.slice(16, 20), hex.slice(20)].join("-");
+          books.push({
+            source: "local",
+            id,
+            title: entry.name.slice(0, -4),
+            category: categories.join(" / ") || "Uncategorized",
+            sizeBytes: info.size,
+            format: "pdf",
+            readUrl,
+            availability: "available",
+            etag: info.size + "-" + info.mtime.getTime(),
+            lastModified: info.mtime.toISOString()
+          });
+        }
+      }
+    }
+  } catch {
+    throw new Error("Could not scan this folder. Check that the folder and its PDFs are accessible.");
+  }
+  books.sort((a, b) => a.readUrl.localeCompare(b.readUrl));
+  return { folder, books };
+}
+async function checkLocalPDF(url) {
+  const { fileURLToPath } = require("node:url");
+  const { stat } = require("node:fs/promises");
+  try {
+    if ((await stat(fileURLToPath(url))).isFile()) return;
+  } catch {
+  }
+  throw new Error("Could not find this PDF. Check the folder and refresh the library.");
+}
+
 // local-typescript:C:\Users\Fabricio\Documents\PluginLivrosObsidian\plugin\src\model.ts
 var ROOT = "Biblioteca";
 var STATE = ROOT + "/_state";
@@ -45,7 +102,7 @@ function endpoint(value) {
 function validateBook(value, origin) {
   if (!value || typeof value !== "object") return false;
   const entry = value;
-  return typeof entry.id === "string" && idPattern.test(entry.id) && typeof entry.title === "string" && typeof entry.category === "string" && (entry.author === void 0 || typeof entry.author === "string") && (entry.coverUrl === void 0 || entry.coverUrl === origin + "/api/v1/books/" + entry.id + "/cover") && (entry.pageCount === void 0 || Number.isSafeInteger(entry.pageCount) && entry.pageCount > 0) && Number.isSafeInteger(entry.sizeBytes) && entry.sizeBytes >= 0 && typeof entry.etag === "string" && typeof entry.lastModified === "string" && entry.format === "pdf" && (entry.availability === "available" || entry.availability === "missing") && entry.readUrl === origin + "/api/v1/books/" + entry.id + "/file" && new TextEncoder().encode(entry.readUrl).length <= 300;
+  return typeof entry.id === "string" && idPattern.test(entry.id) && entry.source === void 0 && typeof entry.title === "string" && typeof entry.category === "string" && (entry.author === void 0 || typeof entry.author === "string") && (entry.coverUrl === void 0 || entry.coverUrl === origin + "/api/v1/books/" + entry.id + "/cover") && (entry.pageCount === void 0 || Number.isSafeInteger(entry.pageCount) && entry.pageCount > 0) && Number.isSafeInteger(entry.sizeBytes) && entry.sizeBytes >= 0 && typeof entry.etag === "string" && typeof entry.lastModified === "string" && entry.format === "pdf" && (entry.availability === "available" || entry.availability === "missing") && entry.readUrl === origin + "/api/v1/books/" + entry.id + "/file" && new TextEncoder().encode(entry.readUrl).length <= 300;
 }
 function validBooks(value, origin) {
   return Array.isArray(value) && value.every((book) => validateBook(book, origin)) && new Set(value.map((book) => book.id)).size === value.length;
@@ -254,11 +311,15 @@ var LibraryStorage = class {
     return task;
   }
   async writeReference(book, path) {
+    const contents = new TextEncoder().encode(book.readUrl);
+    if (book.source === "local" && (!book.readUrl.startsWith("file:///") || contents.length > 300)) {
+      throw new Error("PDF++ cannot open this file path. Use a shorter path on a local or mapped drive.");
+    }
     await this.ensureFolder(path.slice(0, path.lastIndexOf("/")));
     let file = this.app.vault.getAbstractFileByPath(path);
     if (!file) {
       try {
-        return await this.app.vault.createBinary(path, new TextEncoder().encode(book.readUrl).buffer);
+        return await this.app.vault.createBinary(path, contents.buffer);
       } catch (error) {
         file = this.app.vault.getAbstractFileByPath(path);
         if (!(file instanceof import_obsidian2.TFile)) throw error;
@@ -278,7 +339,7 @@ var LibraryStorage = class {
       if (old !== oldOrigin + "/api/v1/books/" + book.id + "/file" || !old.startsWith("https://")) {
         throw new Error("The existing file is not a library reference.");
       }
-      await this.app.vault.modifyBinary(file, new TextEncoder().encode(book.readUrl).buffer);
+      await this.app.vault.modifyBinary(file, contents.buffer);
     }
     return file;
   }
@@ -487,15 +548,19 @@ var LibraryView = class extends import_obsidian3.ItemView {
     for (const category of categories) this.categories.createEl("option", { value: category, text: category });
     if (this.category && !categories.includes(this.category)) this.category = "";
     this.categories.value = this.category;
-    this.refreshButton.disabled = this.plugin.busy || !this.plugin.origin;
-    const connection = this.plugin.connected ? "Connected to server" : "Disconnected from server";
+    const local = Boolean(this.plugin.localFolder);
+    const configured = local || Boolean(this.plugin.origin);
+    this.refreshButton.disabled = this.plugin.busy || !configured;
+    const connection = local ? "Local folder" : configured ? "Server" : "Set up library";
+    const state = this.plugin.connected ? "Ready" : configured ? "Unavailable" : "Choose a source";
+    this.connectionButton.setText(connection);
     this.connectionButton.dataset.connected = String(this.plugin.connected === true);
-    this.connectionButton.title = connection + " \xB7 Server settings";
+    this.connectionButton.title = connection + " \xB7 " + state + " \xB7 Library source settings";
     this.connectionButton.setAttribute("aria-label", this.connectionButton.title);
     this.message.setText([
       this.plugin.busy ? "Refreshing catalog\u2026" : "",
       this.plugin.error,
-      !this.plugin.origin ? "Connect to your Raspberry Pi library or browse the synced catalog." : "",
+      !configured ? "Choose where your PDF books are stored to set up the library." : "",
       this.plugin.pdfPlusStatus() === "disabled" ? "Enable PDF++ to open external references." : ""
     ].filter(Boolean).join(" "));
     if (this.plugin.pdfPlusStatus() === "disabled") this.message.createEl("a", {
@@ -593,7 +658,7 @@ var LibraryView = class extends import_obsidian3.ItemView {
     const modal = new import_obsidian3.Modal(this.app);
     modal.setTitle("Delete from library?");
     modal.contentEl.createEl("p", {
-      text: "Remove \u201C" + this.title(book) + "\u201D from your library on synced devices. The server PDF, notes, and reading progress are kept."
+      text: "Hide \u201C" + this.title(book) + "\u201D from your library. The original PDF, notes, and reading progress are kept."
     });
     new import_obsidian3.Setting(modal.contentEl).addButton((button) => button.setButtonText("Cancel").onClick(() => modal.close())).addButton((button) => button.setButtonText("Delete from library").setWarning().onClick(async () => {
       button.setDisabled(true);
@@ -631,8 +696,8 @@ var LibraryView = class extends import_obsidian3.ItemView {
   }
   configure() {
     const modal = new import_obsidian3.Modal(this.app);
-    modal.setTitle("Library server");
-    renderServerSettings(modal.contentEl, this.plugin, () => modal.close());
+    modal.setTitle("Library source");
+    renderLibrarySettings(modal.contentEl, this.plugin, () => modal.close());
     modal.open();
   }
   folderDialog(book) {
@@ -766,7 +831,7 @@ var LibraryView = class extends import_obsidian3.ItemView {
       ["Category", this.categoryFor(book)],
       ["Format and size", "PDF \xB7 " + (book.sizeBytes / 1048576).toLocaleString("en", { maximumFractionDigits: 2 }) + " MiB"],
       ["Pages", book.pageCount?.toLocaleString("en") ?? "Unknown"],
-      ["Availability", book.availability === "available" ? "Available on Raspberry Pi" : "File unavailable"],
+      ["Availability", book.availability === "available" ? book.source === "local" ? "Available locally" : "Available on server" : "File unavailable"],
       ["Progress", reading],
       ["Last updated", progress && new Date(progress.updatedAt).toLocaleString("en")],
       ["Study folder", personal?.folder ?? "Not linked yet"]
@@ -795,49 +860,102 @@ var LibraryView = class extends import_obsidian3.ItemView {
     modal.open();
   }
 };
-function renderServerSettings(container, plugin, onSuccess) {
-  let value = plugin.origin;
-  new import_obsidian3.Setting(container).setName("Private HTTPS origin").addText((text) => text.setValue(value).setPlaceholder("https://pi.example.ts.net").onChange((next) => {
-    value = next;
-  }));
-  const status = container.createDiv({ attr: { role: "status" } });
-  new import_obsidian3.Setting(container).addButton((button) => button.setButtonText("Test and connect").setCta().onClick(async () => {
-    button.setDisabled(true);
-    status.setText("Testing connection\u2026");
-    try {
-      await plugin.connect(value);
-      status.setText(plugin.error || (plugin.connected ? "Connected to server" : "Disconnected from server"));
-      if (!plugin.error) onSuccess?.();
-    } catch (error) {
-      status.setText(error instanceof Error ? error.message : "Connection failed.");
-    } finally {
-      button.setDisabled(false);
+function renderLibrarySettings(container, plugin, onSuccess) {
+  const settings = container.createDiv("ol-settings");
+  const source = settings.createDiv("ol-settings-section");
+  source.createEl("h3", { text: "Where are your books?" });
+  const selector = source.createEl("select", { attr: { "aria-label": "Book source" } });
+  selector.createEl("option", { value: "", text: "Choose a source" }).disabled = true;
+  selector.createEl("option", { value: "local", text: import_obsidian3.Platform.isMobile ? "This device (desktop only)" : "This device" }).disabled = import_obsidian3.Platform.isMobile;
+  selector.createEl("option", { value: "server", text: "Another computer or server" });
+  selector.value = plugin.localFolder ? "local" : plugin.origin ? "server" : "";
+  const fields = source.createDiv("ol-source-fields");
+  let localPath = plugin.localFolder;
+  let serverAddress = plugin.origin;
+  const renderSource = () => {
+    fields.empty();
+    if (!selector.value) return;
+    const local = selector.value === "local";
+    const label = fields.createEl("label", { text: local ? "PDF folder" : "Library address" });
+    const input = label.createEl("input", {
+      type: local ? "text" : "url",
+      placeholder: local ? "C:\\Books or /Users/you/Books" : "https://library.example.net",
+      attr: { spellcheck: "false" }
+    });
+    input.value = local ? localPath : serverAddress;
+    input.addEventListener("input", () => {
+      if (local) localPath = input.value;
+      else serverAddress = input.value;
+    });
+    fields.createEl("p", { cls: "ol-settings-help", text: local ? "Paste the full path to a folder on this computer. The library scans its subfolders and opens PDFs in place with PDF++." : "Enter the HTTPS address of the Obsidian Library server that shares your PDF folder." });
+    if (!local) {
+      const guide = fields.createEl("details");
+      guide.createEl("summary", { text: "How do I set up a server?" });
+      guide.createEl("p", { cls: "ol-settings-help", text: "Run the Obsidian Library server on a computer that can read your PDF folder. Make the service available over HTTPS, then paste its base address here. The server scans the folder and streams PDFs to your devices." });
     }
-  }));
+    const actions = fields.createDiv("ol-settings-actions");
+    const action = actions.createEl("button", { cls: "mod-cta", text: local ? "Load books" : "Test and connect" });
+    const active = local ? Boolean(plugin.localFolder) : Boolean(plugin.origin && !plugin.localFolder);
+    const status = actions.createDiv({
+      text: active ? plugin.error || (plugin.connected ? "Connected \xB7 " + plugin.books.length + " PDFs" : "") : "",
+      attr: { role: "status" }
+    });
+    action.addEventListener("click", async () => {
+      action.disabled = selector.disabled = input.disabled = true;
+      status.setText(local ? "Scanning folder\u2026" : "Testing connection\u2026");
+      try {
+        if (local) await plugin.useLocalFolder(input.value);
+        else await plugin.connect(input.value);
+        const count = plugin.books.length;
+        status.setText(plugin.error || count + (count === 1 ? " PDF found." : " PDFs found."));
+        if (!plugin.error) onSuccess?.();
+      } catch (error) {
+        status.setText(error instanceof Error ? error.message : "Could not set up the library source.");
+      } finally {
+        action.disabled = selector.disabled = input.disabled = false;
+      }
+    });
+  };
+  selector.addEventListener("change", renderSource);
+  renderSource();
   if (!onSuccess) {
+    const notes = settings.createDiv("ol-settings-section");
+    notes.createEl("h3", { text: "Study notes" });
     let root = plugin.studyRoot;
     let template = plugin.studyTemplate;
-    new import_obsidian3.Setting(container).setName("Default study folder").addText((text) => text.setValue(root).onChange((next) => {
+    new import_obsidian3.Setting(notes).setName("Default notes folder").setDesc("Where new book records and study notes are created in this vault.").addText((text) => text.setValue(root).onChange((next) => {
       root = next;
     }));
-    new import_obsidian3.Setting(container).setName("Study note template").addText((text) => text.setValue(template).setPlaceholder("Studies/Templates/Study Note.md").onChange((next) => {
+    new import_obsidian3.Setting(notes).setName("Note template").setDesc("Optional path to a Markdown file in this vault.").addText((text) => text.setValue(template).setPlaceholder("Studies/Templates/Study Note.md").onChange((next) => {
       template = next;
     }));
-    new import_obsidian3.Setting(container).addButton((button) => button.setButtonText("Save preferences").onClick(() => plugin.run(async () => {
-      plugin.studyRoot = studyFolder(root);
-      plugin.studyTemplate = template.trim();
-      await plugin.saveSettings();
-      status.setText("Preferences saved.");
-    })));
+    const actions = notes.createDiv("ol-settings-actions");
+    const save = actions.createEl("button", { text: "Save note preferences" });
+    const status = actions.createDiv({ attr: { role: "status" } });
+    save.addEventListener("click", async () => {
+      save.disabled = true;
+      try {
+        plugin.studyRoot = studyFolder(root);
+        plugin.studyTemplate = template.trim();
+        await plugin.saveSettings();
+        status.setText("Preferences saved.");
+      } catch (error) {
+        status.setText(error instanceof Error ? error.message : "Could not save preferences.");
+      } finally {
+        save.disabled = false;
+      }
+    });
   }
 }
 
 // local-typescript:C:\Users\Fabricio\Documents\PluginLivrosObsidian\plugin\src\main.ts
+var LOCAL_FOLDER_KEY = "obsidian-library-local-folder";
 var LibraryPlugin = class extends import_obsidian4.Plugin {
   constructor() {
     super(...arguments);
     __publicField(this, "storage");
     __publicField(this, "origin", "");
+    __publicField(this, "localFolder", "");
     __publicField(this, "studyRoot", NOTES.slice(0, -1));
     __publicField(this, "studyTemplate", "");
     __publicField(this, "books", []);
@@ -847,6 +965,7 @@ var LibraryPlugin = class extends import_obsidian4.Plugin {
     __publicField(this, "deviceId", "");
     __publicField(this, "stopped", false);
     __publicField(this, "refreshTask");
+    __publicField(this, "changingSource", false);
     __publicField(this, "catalogIdentity");
     __publicField(this, "snapshotSaved", false);
     __publicField(this, "reloadTimer");
@@ -872,6 +991,8 @@ var LibraryPlugin = class extends import_obsidian4.Plugin {
     const stored = this.app.loadLocalStorage(key);
     this.deviceId = typeof stored === "string" && idPattern.test(stored) ? stored : crypto.randomUUID();
     this.app.saveLocalStorage(key, this.deviceId);
+    const localFolder = this.app.loadLocalStorage(LOCAL_FOLDER_KEY);
+    if (!import_obsidian4.Platform.isMobile && typeof localFolder === "string") this.localFolder = localFolder;
     this.registerView(VIEW, (leaf) => new LibraryView(leaf, this));
     this.addRibbonIcon("library", "Open library", () => void this.run(() => this.openLibrary()));
     this.addCommand({ id: "open-library", name: "Open library", callback: () => void this.run(() => this.openLibrary()) });
@@ -923,7 +1044,7 @@ var LibraryPlugin = class extends import_obsidian4.Plugin {
       void this.run(async () => {
         await this.loadSnapshot();
         this.redraw();
-        if (this.origin) await this.refresh();
+        await this.refresh();
       });
     });
   }
@@ -939,9 +1060,10 @@ var LibraryPlugin = class extends import_obsidian4.Plugin {
     }
   }
   async loadSnapshot() {
+    if (this.localFolder) return;
     try {
       const state = await this.storage.snapshot();
-      if (this.stopped) return;
+      if (this.stopped || this.localFolder) return;
       if (!state || this.origin && state.origin !== this.origin) {
         this.snapshotSaved = false;
         return;
@@ -974,6 +1096,7 @@ var LibraryPlugin = class extends import_obsidian4.Plugin {
         failed = false;
         for (const [index, book] of source.entries()) {
           if (this.stopped || source !== this.books) break;
+          if (book.source === "local") continue;
           try {
             await this.storage.ensureReference(book);
             const linked = this.storage.folderReference(personals.get(book.id));
@@ -990,10 +1113,48 @@ var LibraryPlugin = class extends import_obsidian4.Plugin {
     }
   }
   refresh() {
-    if (!this.origin) return Promise.resolve();
-    return this.refreshTask ?? (this.refreshTask = this.refreshCatalog(this.origin).finally(() => {
+    if (this.changingSource || !this.localFolder && !this.origin) return Promise.resolve();
+    const folder = this.localFolder;
+    return this.refreshTask ?? (this.refreshTask = (folder ? this.refreshLocal(folder) : this.refreshCatalog(this.origin)).finally(() => {
       this.refreshTask = void 0;
     }));
+  }
+  async refreshLocal(folder) {
+    this.busy = true;
+    this.error = "";
+    this.redraw();
+    try {
+      const state = await scanLocalFolder(folder, this.deviceId);
+      if (this.stopped) return;
+      this.books = state.books;
+      this.connected = true;
+    } catch (error) {
+      this.connected = false;
+      this.error = error instanceof Error ? error.message : "Could not scan the PDF folder.";
+    } finally {
+      this.busy = false;
+      this.redraw();
+    }
+  }
+  async useLocalFolder(value) {
+    if (import_obsidian4.Platform.isMobile) throw new Error("Local folders are available on desktop.");
+    if (this.changingSource) throw new Error("Wait for the current source change to finish.");
+    this.changingSource = true;
+    try {
+      await this.refreshTask;
+      const state = await scanLocalFolder(value, this.deviceId);
+      if (this.stopped) return;
+      this.app.saveLocalStorage(LOCAL_FOLDER_KEY, state.folder);
+      this.localFolder = state.folder;
+      this.catalogIdentity = void 0;
+      this.snapshotSaved = false;
+      this.books = state.books;
+      this.error = "";
+      this.connected = true;
+    } finally {
+      this.changingSource = false;
+      this.redraw();
+    }
   }
   async refreshCatalog(origin) {
     this.busy = true;
@@ -1016,7 +1177,7 @@ var LibraryPlugin = class extends import_obsidian4.Plugin {
     } catch (error) {
       if (this.stopped || this.origin !== origin) return;
       this.connected = false;
-      this.error = error instanceof Error ? error.message : "Check your tailnet connection.";
+      this.error = error instanceof Error ? error.message : "Check your connection to the library server.";
     } finally {
       this.busy = false;
       this.redraw();
@@ -1024,17 +1185,32 @@ var LibraryPlugin = class extends import_obsidian4.Plugin {
   }
   async connect(value) {
     const origin = endpoint(value);
-    await checkServer(origin);
-    await this.refreshTask;
-    if (this.origin !== origin) {
-      this.books = [];
-      this.catalogIdentity = void 0;
-      this.snapshotSaved = false;
-      this.connected = false;
+    if (this.changingSource) throw new Error("Wait for the current source change to finish.");
+    this.changingSource = true;
+    try {
+      await this.refreshTask;
+      const version = await checkServer(origin);
+      const state = version && !this.localFolder && this.hasCatalog(origin, version) ? { version, books: this.books } : await fetchCatalog(origin);
+      if (this.stopped) return;
+      await this.saveData({ origin, studyRoot: this.studyRoot, studyTemplate: this.studyTemplate });
+      this.app.saveLocalStorage(LOCAL_FOLDER_KEY, "");
+      this.localFolder = "";
+      this.origin = origin;
+      this.applyCatalog(origin, state);
+      this.connected = true;
+      this.error = "";
+      if (!this.snapshotSaved) {
+        try {
+          await this.storage.saveSnapshot({ schema: 1, origin, ...state });
+          this.snapshotSaved = true;
+        } catch {
+          this.error = "Connected. Could not save the offline catalog.";
+        }
+      }
+    } finally {
+      this.changingSource = false;
+      this.redraw();
     }
-    this.origin = origin;
-    await this.saveSettings();
-    await this.refresh();
   }
   redraw() {
     if (this.stopped) return;
@@ -1115,8 +1291,9 @@ var LibraryPlugin = class extends import_obsidian4.Plugin {
     if (this.pdfPlusStatus() === "disabled") throw new Error("Enable PDF++ to open external references.");
     if (book.availability === "missing") throw new Error("Book not found on the server.");
     const linked = this.storage.folderReference(this.storage.personals().get(book.id));
-    const available = checkPDF(book.readUrl).catch((error) => {
-      throw new Error("Could not load the PDF. " + (error instanceof Error ? error.message : "Check your tailnet connection."));
+    if (book.source === "local") await checkLocalPDF(book.readUrl);
+    const available = (book.source === "local" ? Promise.resolve() : checkPDF(book.readUrl)).catch((error) => {
+      throw new Error("Could not load the PDF. " + (error instanceof Error ? error.message : "Check your connection to the library server."));
     });
     const [file] = await Promise.all([this.storage.ensureReference(book, linked), available]);
     const leaf = this.app.workspace.getLeaf("tab");
@@ -1191,6 +1368,6 @@ var LibrarySettings = class extends import_obsidian4.PluginSettingTab {
   }
   display() {
     this.containerEl.empty();
-    renderServerSettings(this.containerEl, this.library);
+    renderLibrarySettings(this.containerEl, this.library);
   }
 };

@@ -77,15 +77,19 @@ export class LibraryView extends ItemView {
 		for (const category of categories) this.categories.createEl("option", { value: category, text: category });
 		if (this.category && !categories.includes(this.category)) this.category = "";
 		this.categories.value = this.category;
-		this.refreshButton.disabled = this.plugin.busy || !this.plugin.origin;
-		const connection = this.plugin.connected ? "Connected to server" : "Disconnected from server";
+		const local = Boolean(this.plugin.localFolder);
+		const configured = local || Boolean(this.plugin.origin);
+		this.refreshButton.disabled = this.plugin.busy || !configured;
+		const connection = local ? "Local folder" : configured ? "Server" : "Set up library";
+		const state = this.plugin.connected ? "Ready" : configured ? "Unavailable" : "Choose a source";
+		this.connectionButton.setText(connection);
 		this.connectionButton.dataset.connected = String(this.plugin.connected === true);
-		this.connectionButton.title = connection + " · Server settings";
+		this.connectionButton.title = connection + " · " + state + " · Library source settings";
 		this.connectionButton.setAttribute("aria-label", this.connectionButton.title);
 		this.message.setText([
 			this.plugin.busy ? "Refreshing catalog…" : "",
 			this.plugin.error,
-			!this.plugin.origin ? "Connect to your Raspberry Pi library or browse the synced catalog." : "",
+			!configured ? "Choose where your PDF books are stored to set up the library." : "",
 			this.plugin.pdfPlusStatus() === "disabled" ? "Enable PDF++ to open external references." : "",
 		].filter(Boolean).join(" "));
 		if (this.plugin.pdfPlusStatus() === "disabled") this.message.createEl("a", {
@@ -188,7 +192,7 @@ export class LibraryView extends ItemView {
 		const modal = new Modal(this.app);
 		modal.setTitle("Delete from library?");
 		modal.contentEl.createEl("p", {
-			text: "Remove “" + this.title(book) + "” from your library on synced devices. The server PDF, notes, and reading progress are kept.",
+			text: "Hide “" + this.title(book) + "” from your library. The original PDF, notes, and reading progress are kept.",
 		});
 		new Setting(modal.contentEl)
 			.addButton(button => button.setButtonText("Cancel").onClick(() => modal.close()))
@@ -232,8 +236,8 @@ export class LibraryView extends ItemView {
 
 	private configure(): void {
 		const modal = new Modal(this.app);
-		modal.setTitle("Library server");
-		renderServerSettings(modal.contentEl, this.plugin, () => modal.close());
+		modal.setTitle("Library source");
+		renderLibrarySettings(modal.contentEl, this.plugin, () => modal.close());
 		modal.open();
 	}
 
@@ -373,7 +377,7 @@ export class LibraryView extends ItemView {
 			["Category", this.categoryFor(book)],
 			["Format and size", "PDF · " + (book.sizeBytes / 1048576).toLocaleString("en", { maximumFractionDigits: 2 }) + " MiB"],
 			["Pages", book.pageCount?.toLocaleString("en") ?? "Unknown"],
-			["Availability", book.availability === "available" ? "Available on Raspberry Pi" : "File unavailable"],
+			["Availability", book.availability === "available" ? (book.source === "local" ? "Available locally" : "Available on server") : "File unavailable"],
 			["Progress", reading],
 			["Last updated", progress && new Date(progress.updatedAt).toLocaleString("en")],
 			["Study folder", personal?.folder ?? "Not linked yet"],
@@ -402,38 +406,91 @@ export class LibraryView extends ItemView {
 	}
 }
 
-export function renderServerSettings(container: HTMLElement, plugin: LibraryPlugin, onSuccess?: () => void): void {
-	let value = plugin.origin;
-	new Setting(container).setName("Private HTTPS origin")
-		.addText(text => text.setValue(value).setPlaceholder("https://pi.example.ts.net").onChange(next => { value = next; }));
-	const status = container.createDiv({ attr: { role: "status" } });
-	new Setting(container).addButton(button => button.setButtonText("Test and connect").setCta().onClick(async () => {
-		button.setDisabled(true);
-		status.setText("Testing connection…");
-		try {
-			await plugin.connect(value);
-			status.setText(plugin.error || (plugin.connected ? "Connected to server" : "Disconnected from server"));
-			if (!plugin.error) onSuccess?.();
-		} catch (error) {
-			status.setText(error instanceof Error ? error.message : "Connection failed.");
-		} finally {
-			button.setDisabled(false);
+export function renderLibrarySettings(container: HTMLElement, plugin: LibraryPlugin, onSuccess?: () => void): void {
+	const settings = container.createDiv("ol-settings");
+	const source = settings.createDiv("ol-settings-section");
+	source.createEl("h3", { text: "Where are your books?" });
+	const selector = source.createEl("select", { attr: { "aria-label": "Book source" } });
+	selector.createEl("option", { value: "", text: "Choose a source" }).disabled = true;
+	selector.createEl("option", { value: "local", text: Platform.isMobile ? "This device (desktop only)" : "This device" }).disabled = Platform.isMobile;
+	selector.createEl("option", { value: "server", text: "Another computer or server" });
+	selector.value = plugin.localFolder ? "local" : plugin.origin ? "server" : "";
+	const fields = source.createDiv("ol-source-fields");
+	let localPath = plugin.localFolder;
+	let serverAddress = plugin.origin;
+	const renderSource = () => {
+		fields.empty();
+		if (!selector.value) return;
+		const local = selector.value === "local";
+		const label = fields.createEl("label", { text: local ? "PDF folder" : "Library address" });
+		const input = label.createEl("input", {
+			type: local ? "text" : "url",
+			placeholder: local ? "C:\\Books or /Users/you/Books" : "https://library.example.net",
+			attr: { spellcheck: "false" },
+		});
+		input.value = local ? localPath : serverAddress;
+		input.addEventListener("input", () => {
+			if (local) localPath = input.value;
+			else serverAddress = input.value;
+		});
+		fields.createEl("p", { cls: "ol-settings-help", text: local
+			? "Paste the full path to a folder on this computer. The library scans its subfolders and opens PDFs in place with PDF++."
+			: "Enter the HTTPS address of the Obsidian Library server that shares your PDF folder." });
+		if (!local) {
+			const guide = fields.createEl("details");
+			guide.createEl("summary", { text: "How do I set up a server?" });
+			guide.createEl("p", { cls: "ol-settings-help", text: "Run the Obsidian Library server on a computer that can read your PDF folder. Make the service available over HTTPS, then paste its base address here. The server scans the folder and streams PDFs to your devices." });
 		}
-	}));
+		const actions = fields.createDiv("ol-settings-actions");
+		const action = actions.createEl("button", { cls: "mod-cta", text: local ? "Load books" : "Test and connect" });
+		const active = local ? Boolean(plugin.localFolder) : Boolean(plugin.origin && !plugin.localFolder);
+		const status = actions.createDiv({
+			text: active ? plugin.error || (plugin.connected ? "Connected · " + plugin.books.length + " PDFs" : "") : "",
+			attr: { role: "status" },
+		});
+		action.addEventListener("click", async () => {
+			action.disabled = selector.disabled = input.disabled = true;
+			status.setText(local ? "Scanning folder…" : "Testing connection…");
+			try {
+				if (local) await plugin.useLocalFolder(input.value);
+				else await plugin.connect(input.value);
+				const count = plugin.books.length;
+				status.setText(plugin.error || count + (count === 1 ? " PDF found." : " PDFs found."));
+				if (!plugin.error) onSuccess?.();
+			} catch (error) {
+				status.setText(error instanceof Error ? error.message : "Could not set up the library source.");
+			} finally {
+				action.disabled = selector.disabled = input.disabled = false;
+			}
+		});
+	};
+	selector.addEventListener("change", renderSource);
+	renderSource();
 	if (!onSuccess) {
+		const notes = settings.createDiv("ol-settings-section");
+		notes.createEl("h3", { text: "Study notes" });
 		let root = plugin.studyRoot;
 		let template = plugin.studyTemplate;
-		new Setting(container).setName("Default study folder").addText(text =>
+		new Setting(notes).setName("Default notes folder").setDesc("Where new book records and study notes are created in this vault.").addText(text =>
 			text.setValue(root).onChange(next => { root = next; }));
-		new Setting(container).setName("Study note template").addText(text =>
+		new Setting(notes).setName("Note template").setDesc("Optional path to a Markdown file in this vault.").addText(text =>
 			text.setValue(template).setPlaceholder("Studies/Templates/Study Note.md")
 				.onChange(next => { template = next; }));
-		new Setting(container).addButton(button => button.setButtonText("Save preferences").onClick(() =>
-			plugin.run(async () => {
+		const actions = notes.createDiv("ol-settings-actions");
+		const save = actions.createEl("button", { text: "Save note preferences" });
+		const status = actions.createDiv({ attr: { role: "status" } });
+		save.addEventListener("click", async () => {
+			save.disabled = true;
+			try {
 				plugin.studyRoot = studyFolder(root);
 				plugin.studyTemplate = template.trim();
 				await plugin.saveSettings();
 				status.setText("Preferences saved.");
-			})));
+			} catch (error) {
+				status.setText(error instanceof Error ? error.message : "Could not save preferences.");
+			} finally {
+				save.disabled = false;
+			}
+		});
 	}
 }

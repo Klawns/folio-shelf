@@ -8,6 +8,7 @@ export const NOTES = ROOT + "/Notas/";
 export const idPattern = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/;
 
 export interface Book {
+	source?: "local";
 	id: string;
 	title: string;
 	author?: string;
@@ -45,6 +46,7 @@ function validateBook(value: unknown, origin: string): value is Book {
 	if (!value || typeof value !== "object") return false;
 	const entry = value as Partial<Book>;
 	return typeof entry.id === "string" && idPattern.test(entry.id)
+		&& entry.source === undefined
 		&& typeof entry.title === "string" && typeof entry.category === "string"
 		&& (entry.author === undefined || typeof entry.author === "string")
 		&& (entry.coverUrl === undefined || entry.coverUrl === origin + "/api/v1/books/" + entry.id + "/cover")

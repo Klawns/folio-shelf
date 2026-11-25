@@ -1,10 +1,11 @@
 import { expect, it, vi } from "vitest";
 import type LibraryPlugin from "./main";
-import { LibraryView } from "./view";
+import { LibraryView, renderLibrarySettings } from "./view";
 
 vi.mock("obsidian", () => {
 	class Element {
 		text = "";
+		value = "";
 		dataset: Record<string, string> = {};
 		listeners = new Map<string, () => void>();
 		children: Element[] = [];
@@ -71,4 +72,35 @@ it("renders the library when Obsidian opens the workspace view", async () => {
 	expect(JSON.stringify(content)).not.toContain("Test book 12");
 	content.find("Previous")!.listeners.get("click")!();
 	expect(JSON.stringify(content)).toContain("Page 1 of 2");
+});
+
+it("shows the active source fields and loads a desktop folder from the settings", async () => {
+	const plugin = {
+		localFolder: "",
+		origin: "https://books.example.test",
+		books: [{}],
+		useLocalFolder: vi.fn(),
+	} as unknown as LibraryPlugin;
+	const view = new LibraryView({} as ConstructorParameters<typeof LibraryView>[0], plugin);
+	const close = vi.fn();
+	renderLibrarySettings(view.contentEl, plugin, close);
+
+	type Element = {
+		value: string;
+		children: Element[];
+		listeners: Map<string, () => unknown>;
+		find(text: string): Element | undefined;
+	};
+	const content = view.contentEl as unknown as Element;
+	expect(content.find("Library address")).toBeDefined();
+	const selector = content.children[0].children[0].children[1];
+	selector.value = "local";
+	selector.listeners.get("change")!();
+	expect(content.find("Library address")).toBeUndefined();
+	const [input] = content.find("PDF folder")!.children;
+	input.value = "D:\\Books";
+	await content.find("Load books")!.listeners.get("click")!();
+	expect(plugin.useLocalFolder).toHaveBeenCalledWith("D:\\Books");
+	expect(content.find("1 PDF found.")).toBeDefined();
+	expect(close).toHaveBeenCalledOnce();
 });

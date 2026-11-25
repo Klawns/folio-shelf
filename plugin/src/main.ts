@@ -1,13 +1,16 @@
 import { Notice, Platform, Plugin, PluginSettingTab, WorkspaceLeaf } from "obsidian";
+import { checkLocalPDF, scanLocalFolder } from "./local";
 import { Book, NOTES, PERSONAL, Progress, SNAPSHOT, STATE, endpoint, hasConflict, idPattern, progressHeads, referencePath } from "./model";
 import { checkPDF, checkServer, fetchCatalog } from "./remote";
 import { LibraryStorage, Personal } from "./storage";
-import { LibraryView, VIEW, renderServerSettings } from "./view";
+import { LibraryView, VIEW, renderLibrarySettings } from "./view";
 
 interface PDFViewer {
 	currentPageNumber: number;
 	pdfDocument?: object;
 }
+
+const LOCAL_FOLDER_KEY = "obsidian-library-local-folder";
 
 interface PageSample {
 	viewer: PDFViewer;
@@ -22,6 +25,7 @@ interface PageSample {
 export default class LibraryPlugin extends Plugin {
 	storage!: LibraryStorage;
 	origin = "";
+	localFolder = "";
 	studyRoot = NOTES.slice(0, -1);
 	studyTemplate = "";
 	books: Book[] = [];
@@ -31,6 +35,7 @@ export default class LibraryPlugin extends Plugin {
 	private deviceId = "";
 	private stopped = false;
 	private refreshTask?: Promise<void>;
+	private changingSource = false;
 	private catalogIdentity?: { origin: string; version: string };
 	private snapshotSaved = false;
 	private reloadTimer?: number;
@@ -52,6 +57,8 @@ export default class LibraryPlugin extends Plugin {
 		const stored: unknown = this.app.loadLocalStorage(key);
 		this.deviceId = typeof stored === "string" && idPattern.test(stored) ? stored : crypto.randomUUID();
 		this.app.saveLocalStorage(key, this.deviceId);
+		const localFolder: unknown = this.app.loadLocalStorage(LOCAL_FOLDER_KEY);
+		if (!Platform.isMobile && typeof localFolder === "string") this.localFolder = localFolder;
 		this.registerView(VIEW, leaf => new LibraryView(leaf, this));
 		this.addRibbonIcon("library", "Open library", () => void this.run(() => this.openLibrary()));
 		this.addCommand({ id: "open-library", name: "Open library", callback: () => void this.run(() => this.openLibrary()) });
@@ -103,7 +110,7 @@ export default class LibraryPlugin extends Plugin {
 			void this.run(async () => {
 				await this.loadSnapshot();
 				this.redraw();
-				if (this.origin) await this.refresh();
+				await this.refresh();
 			});
 		});
 	}
@@ -122,9 +129,10 @@ export default class LibraryPlugin extends Plugin {
 	}
 
 	private async loadSnapshot(): Promise<void> {
+		if (this.localFolder) return;
 		try {
 			const state = await this.storage.snapshot();
-			if (this.stopped) return;
+			if (this.stopped || this.localFolder) return;
 			if (!state || (this.origin && state.origin !== this.origin)) {
 				this.snapshotSaved = false;
 				return;
@@ -160,6 +168,7 @@ export default class LibraryPlugin extends Plugin {
 				failed = false;
 				for (const [index, book] of source.entries()) {
 					if (this.stopped || source !== this.books) break;
+					if (book.source === "local") continue;
 					try {
 						await this.storage.ensureReference(book);
 						const linked = this.storage.folderReference(personals.get(book.id));
@@ -175,10 +184,50 @@ export default class LibraryPlugin extends Plugin {
 	}
 
 	refresh(): Promise<void> {
-		if (!this.origin) return Promise.resolve();
-		return this.refreshTask ??= this.refreshCatalog(this.origin).finally(() => {
+		if (this.changingSource || (!this.localFolder && !this.origin)) return Promise.resolve();
+		const folder = this.localFolder;
+		return this.refreshTask ??= (folder ? this.refreshLocal(folder) : this.refreshCatalog(this.origin)).finally(() => {
 			this.refreshTask = undefined;
 		});
+	}
+
+	private async refreshLocal(folder: string): Promise<void> {
+		this.busy = true;
+		this.error = "";
+		this.redraw();
+		try {
+			const state = await scanLocalFolder(folder, this.deviceId);
+			if (this.stopped) return;
+			this.books = state.books;
+			this.connected = true;
+		} catch (error) {
+			this.connected = false;
+			this.error = error instanceof Error ? error.message : "Could not scan the PDF folder.";
+		} finally {
+			this.busy = false;
+			this.redraw();
+		}
+	}
+
+	async useLocalFolder(value: string): Promise<void> {
+		if (Platform.isMobile) throw new Error("Local folders are available on desktop.");
+		if (this.changingSource) throw new Error("Wait for the current source change to finish.");
+		this.changingSource = true;
+		try {
+			await this.refreshTask;
+			const state = await scanLocalFolder(value, this.deviceId);
+			if (this.stopped) return;
+			this.app.saveLocalStorage(LOCAL_FOLDER_KEY, state.folder);
+			this.localFolder = state.folder;
+			this.catalogIdentity = undefined;
+			this.snapshotSaved = false;
+			this.books = state.books;
+			this.error = "";
+			this.connected = true;
+		} finally {
+			this.changingSource = false;
+			this.redraw();
+		}
 	}
 
 	private async refreshCatalog(origin: string): Promise<void> {
@@ -204,7 +253,7 @@ export default class LibraryPlugin extends Plugin {
 		} catch (error) {
 			if (this.stopped || this.origin !== origin) return;
 			this.connected = false;
-			this.error = error instanceof Error ? error.message : "Check your tailnet connection.";
+			this.error = error instanceof Error ? error.message : "Check your connection to the library server.";
 		} finally {
 			this.busy = false;
 			this.redraw();
@@ -213,17 +262,34 @@ export default class LibraryPlugin extends Plugin {
 
 	async connect(value: string): Promise<void> {
 		const origin = endpoint(value);
-		await checkServer(origin);
-		await this.refreshTask;
-		if (this.origin !== origin) {
-			this.books = [];
-			this.catalogIdentity = undefined;
-			this.snapshotSaved = false;
-			this.connected = false;
+		if (this.changingSource) throw new Error("Wait for the current source change to finish.");
+		this.changingSource = true;
+		try {
+			await this.refreshTask;
+			const version = await checkServer(origin);
+			const state = version && !this.localFolder && this.hasCatalog(origin, version)
+				? { version, books: this.books }
+				: await fetchCatalog(origin);
+			if (this.stopped) return;
+			await this.saveData({ origin, studyRoot: this.studyRoot, studyTemplate: this.studyTemplate });
+			this.app.saveLocalStorage(LOCAL_FOLDER_KEY, "");
+			this.localFolder = "";
+			this.origin = origin;
+			this.applyCatalog(origin, state);
+			this.connected = true;
+			this.error = "";
+			if (!this.snapshotSaved) {
+				try {
+					await this.storage.saveSnapshot({ schema: 1, origin, ...state });
+					this.snapshotSaved = true;
+				} catch {
+					this.error = "Connected. Could not save the offline catalog.";
+				}
+			}
+		} finally {
+			this.changingSource = false;
+			this.redraw();
 		}
-		this.origin = origin;
-		await this.saveSettings();
-		await this.refresh();
 	}
 
 	redraw(): void {
@@ -318,8 +384,9 @@ export default class LibraryPlugin extends Plugin {
 		if (this.pdfPlusStatus() === "disabled") throw new Error("Enable PDF++ to open external references.");
 		if (book.availability === "missing") throw new Error("Book not found on the server.");
 		const linked = this.storage.folderReference(this.storage.personals().get(book.id));
-		const available = checkPDF(book.readUrl).catch(error => {
-			throw new Error("Could not load the PDF. " + (error instanceof Error ? error.message : "Check your tailnet connection."));
+		if (book.source === "local") await checkLocalPDF(book.readUrl);
+		const available = (book.source === "local" ? Promise.resolve() : checkPDF(book.readUrl)).catch(error => {
+			throw new Error("Could not load the PDF. " + (error instanceof Error ? error.message : "Check your connection to the library server."));
 		});
 		const [file] = await Promise.all([this.storage.ensureReference(book, linked), available]);
 		const leaf = this.app.workspace.getLeaf("tab");
@@ -396,6 +463,6 @@ class LibrarySettings extends PluginSettingTab {
 
 	display(): void {
 		this.containerEl.empty();
-		renderServerSettings(this.containerEl, this.library);
+		renderLibrarySettings(this.containerEl, this.library);
 	}
 }

@@ -5,7 +5,7 @@ import { dirname, resolve } from "node:path";
 await build({
 	entryPoints: ["./src/main.ts"],
 	bundle: true,
-	external: ["obsidian"],
+	external: ["obsidian", "node:*"],
 	platform: "browser",
 	format: "cjs",
 	target: "es2020",

@@ -1,6 +1,6 @@
 ﻿# Obsidian Library
 
-A personal PDF library inside Obsidian. The Raspberry Pi serves the PDFs, and PDF++ opens them. The vault stores the catalog, notes, lightweight references, and reading progress.
+A personal PDF library inside Obsidian. Open books from a folder on your desktop or from a computer running the Obsidian Library server. PDF++ opens the PDFs, and the vault stores notes, lightweight references, and reading progress.
 
 [Product requirements](PRD_Obsidian_Library.md) · [Technical decisions](DECISOES_TECNICAS.md) · [Windows, iPhone, and Raspberry Pi validation](docs/VALIDACAO.md)
 
@@ -27,7 +27,12 @@ Use `dist/obsidian-library-plugin.zip` or build from source. With Node.js 22.12 
 
 Copy `manifest.json`, `main.js`, and `styles.css` to `.obsidian/plugins/obsidian-library/` in the vault. On iPhone, transfer the same three files to the corresponding mobile vault folder. Restart Obsidian if the plugin does not appear. Enable **Obsidian Library**, **PDF++**, and **Fast Note Sync**, then enable external PDFs in PDF++.
 
-Open the library from the ribbon or with **Open library**. Click the red or green server indicator to configure the private HTTPS origin of the Pi. Click **Refresh** to fetch the latest catalog.
+Open the library from the ribbon or with **Open library**. Click **Set up library** and choose where your books are stored.
+
+- **This device** (desktop only). Paste the full path to the folder, such as `C:\Books` or `/Users/you/Books`, then click **Load books**. The plugin includes PDFs in subfolders and leaves the original files where they are. Enable external PDFs in PDF++ to open them in Obsidian. The source folder is saved on the current device. PDF++ references use absolute paths and can resolve on another device only if the same path is accessible there.
+- **Another computer or server**. Run the Obsidian Library server on a computer that can read your PDF folder, then enter its HTTPS address and click **Test and connect**. Devices that can reach that address can browse and read the library.
+
+Use **Refresh** to rescan the active folder or update the server catalog. Set the default notes folder and optional template separately under **Study notes**.
 
 ### Publish an update
 
@@ -44,7 +49,7 @@ Update the Raspberry Pi service using the deployment steps above when a change r
 - The plugin saves the current page after it settles in the active PDF++ book tab. Fast Note Sync sends the saved page to other devices. Cards show the saved page as a percentage of the catalog page count. Use **Confirm page…** to enter a page manually, mark a book complete, or resolve conflicting updates.
 - Browse 10 books at a time with **Previous** and **Next**. Search and filters apply to the full catalog. Use the **Reading** filter to return to a book in progress.
 - Use **⋯ → Delete from library…** to remove a book from the displayed catalog on synced devices. The PDF, notes, and reading progress are kept. To restore the book, remove its Markdown marker from `Biblioteca/_state/deleted/`.
-- Sync Markdown under `Biblioteca/` and your linked study folders with Fast Note Sync. The plugin recreates stable references under `Biblioteca/_refs/` from the synced catalog. The latest catalog stays available offline. Opening the PDFs requires a server connection.
+- Sync Markdown under `Biblioteca/` and your linked study folders with Fast Note Sync. In server mode, the latest synced catalog stays available offline and opening a PDF requires a server connection. In local mode, the plugin scans the configured folder directly and creates PDF references when needed.
 
 ## Metadata and covers
 
