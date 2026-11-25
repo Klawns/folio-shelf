@@ -174,6 +174,9 @@ it("resumes the most recently read available book at its saved page", async () =
 	const [latest, earlier] = shelf.children;
 	expect(JSON.stringify(latest)).toContain("recent");
 	expect(JSON.stringify(earlier)).toContain("earlier");
-	await latest.children[1].children.find(node => node.text === "Continue reading")!.listeners.get("click")!();
+	await latest.listeners.get("click")!();
+	progress.clear();
+	await view.render();
+	expect(content.children.flatMap(node => node.children).some(node => node.cls === "ol-resume")).toBe(false);
 	expect(openBook).toHaveBeenCalledExactlyOnceWith(books[1], 21, false);
 });

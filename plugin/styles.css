@@ -13,6 +13,10 @@
 	container-type: inline-size;
 }
 
+.ol-library :is(h2, h3) {
+	color: var(--text-normal);
+}
+
 .ol-library h2 {
 	margin: 0;
 	font-size: var(--font-ui-larger);
@@ -271,53 +275,59 @@
 .ol-resume {
 	display: grid;
 	grid-auto-flow: column;
-	grid-auto-columns: min(100%, 24rem);
+	grid-auto-columns: min(100%, 19rem);
+	justify-content: start;
 	gap: var(--size-4-3);
+	min-width: 0;
 	overflow-x: auto;
+	overscroll-behavior-inline: contain;
 	padding-bottom: var(--size-4-1);
 }
 
-.ol-resume-book {
+.ol-library .ol-resume > button.ol-resume-book {
 	display: grid;
-	grid-template-columns: minmax(2.5rem, 4rem) minmax(0, 1fr);
-	align-items: start;
+	grid-template-columns: min(27%, 4.5rem) minmax(0, 1fr) auto;
+	align-items: center;
 	gap: var(--size-4-3);
+	width: 100%;
+	min-width: 0;
+	height: auto;
 	padding: var(--size-4-3);
-	border: 1px solid var(--background-modifier-border);
+	border: 1px solid transparent;
 	border-radius: var(--radius-m);
 	background: var(--background-secondary);
+	box-shadow: none;
+	color: var(--text-normal);
+	text-align: start;
+	white-space: normal;
+}
+
+@media (hover: hover) {
+	.ol-library .ol-resume > button.ol-resume-book:hover {
+		background: var(--background-modifier-hover);
+	}
+}
+
+.ol-library .ol-resume > button.ol-resume-book:focus-visible {
+	outline-offset: -2px;
+}
+
+.ol-library .ol-resume-book .ol-cover {
+	box-shadow: none;
 }
 
 .ol-resume-info > * + * {
 	margin-top: var(--size-4-1);
 }
 
-.ol-resume:has(> .ol-resume-book:only-child) {
-	grid-auto-columns: minmax(0, 1fr);
+.ol-progress {
+	display: block;
 }
 
-@container (min-width: 36rem) {
-	.ol-resume-book:only-child {
-		grid-template-columns: 3rem minmax(0, 1fr);
-		align-items: center;
-	}
-
-	.ol-resume-book:only-child .ol-resume-info {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr) auto;
-		align-items: center;
-		column-gap: var(--size-4-4);
-	}
-
-	.ol-resume-book:only-child .ol-resume-info > :not(button) {
-		grid-column: 1;
-	}
-
-	.ol-resume-book:only-child .ol-resume-info > button {
-		grid-column: 2;
-		grid-row: 1 / span 3;
-		margin-top: 0;
-	}
+.ol-resume-action {
+	display: grid;
+	place-items: center;
+	color: var(--interactive-accent);
 }
 
 :is(.ol-library, .ol-book-details, .ol-settings) :is(button, input, select, summary):focus-visible {

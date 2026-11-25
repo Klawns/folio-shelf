@@ -676,16 +676,23 @@ var LibraryView = class extends import_obsidian3.ItemView {
     this.resume.empty();
     const reading = this.books.filter((book) => this.statusFor(book) === "reading" && book.availability === "available").sort((a, b) => this.lastRead(b).localeCompare(this.lastRead(a)));
     if (!reading.length) return;
-    this.resume.createEl("h3", { text: "Continue reading", cls: "ol-section-heading" });
+    const heading = this.resume.createEl("h3", { text: "Continue reading", cls: "ol-section-heading" });
+    heading.createSpan({ text: String(reading.length), cls: "ol-result-count ol-secondary" });
     const shelf = this.resume.createDiv("ol-resume");
     for (const book of reading) {
-      const item = shelf.createEl("article", { cls: "ol-resume-book" });
+      const title = this.title(book);
+      const current = this.current(book);
+      const label = (current ? "Continue reading " : "Resolve reading progress for ") + title;
+      const item = this.button(shelf, "", () => this.continue(book));
+      item.addClass("ol-resume-book");
+      item.setAttribute("aria-label", label);
+      (0, import_obsidian3.setTooltip)(item, label);
       this.renderCover(item, book);
-      const info = item.createDiv("ol-resume-info");
-      info.createDiv({ text: this.title(book), cls: "ol-card-title" });
-      if (book.author) info.createDiv({ text: book.author, cls: "ol-secondary" });
+      const info = item.createSpan({ cls: "ol-resume-info" });
+      info.createSpan({ text: title, cls: "ol-card-title" });
       if (this.plugin.appearance?.showProgress !== false) this.renderProgress(info, book);
-      this.button(info, this.current(book) ? "Continue reading" : "Resolve progress", () => this.continue(book)).addClass("mod-cta");
+      const action = item.createSpan({ cls: "ol-resume-action", attr: { "aria-hidden": "true" } });
+      (0, import_obsidian3.setIcon)(action, current ? "play" : "book-open");
     }
   }
   draw() {
@@ -738,8 +745,8 @@ var LibraryView = class extends import_obsidian3.ItemView {
     const conflict = hasConflict(this.heads.get(book.id) ?? []);
     const percent = conflict ? void 0 : progress?.completed ? 100 : progress && book.pageCount ? Math.min(100, Math.round(progress.page / book.pageCount * 100)) : void 0;
     const status = book.availability === "missing" ? "Unavailable" : conflict ? "Conflicting reading progress" : progress?.completed ? "Finished" : this.statusFor(book) === "reading" ? "Page " + progress?.page : "Not started";
-    const row = parent.createDiv("ol-progress");
-    const label = row.createDiv("ol-progress-label ol-secondary");
+    const row = parent.createSpan({ cls: "ol-progress" });
+    const label = row.createSpan({ cls: "ol-progress-label ol-secondary" });
     label.createSpan({ text: showPage || !progress || progress.completed || book.availability === "missing" ? status : "" });
     if (percent !== void 0 && book.availability !== "missing") {
       label.createSpan({ text: percent + "%" });
