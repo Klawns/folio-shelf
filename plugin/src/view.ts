@@ -427,18 +427,32 @@ export class LibraryView extends ItemView {
 		const modal = new Modal(this.app);
 		modal.setTitle("Library connection");
 		const info = modal.contentEl.createDiv("ol-connection-info");
-		const showStatus = () => info.setText([
-			source,
-			this.plugin.connected ? "Connected" : "Unavailable",
-			this.bookCount(this.books.length),
-			this.plugin.lastRefresh ? "Last refreshed " + this.plugin.lastRefresh.toLocaleString() : "No refresh this session",
-			this.plugin.error,
-		].filter(Boolean).join("\n"));
+		const status = info.createDiv({ cls: "ol-connection-state", attr: { role: "status" } });
+		const details = info.createEl("dl");
+		const detail = (label: string) => {
+			const row = details.createDiv();
+			row.createEl("dt", { text: label });
+			return row.createEl("dd");
+		};
+		const address = detail("Source");
+		const count = detail("Books");
+		const updated = detail("Last refreshed");
+		const error = info.createDiv({ cls: "ol-connection-error", attr: { role: "alert" } });
+		const showStatus = () => {
+			status.setText(this.plugin.connected ? "Connected" : "Unavailable");
+			status.dataset.connected = String(this.plugin.connected);
+			address.setText(this.plugin.localFolder || this.plugin.origin);
+			count.setText(String(this.books.length));
+			updated.setText(this.plugin.lastRefresh?.toLocaleString() ?? "Not refreshed this session");
+			error.setText(this.plugin.error);
+		};
 		showStatus();
 		const actions = modal.contentEl.createDiv("ol-toolbar");
 		const retry = this.button(actions, "Reconnect", async () => {
 			retry.disabled = true;
-			info.setText("Refreshing library...");
+			status.setText("Refreshing library...");
+			status.dataset.connected = "false";
+			error.setText("");
 			try { await this.plugin.refresh(); }
 			finally { showStatus(); retry.disabled = false; }
 		});
@@ -714,10 +728,11 @@ export function renderLibrarySettings(container: HTMLElement, plugin: LibraryPlu
 			const local = sourceType === "local";
 			const row = new Setting(fields).setName(local ? "PDF folder" : "Server address")
 				.setDesc(local ? "PDFs are scanned and opened in place with PDF++." : "HTTPS endpoint of your library server.");
+			row.settingEl.addClass("ol-source-setting");
 			row.addText(input => {
 				input.setPlaceholder(local ? "C:/Books" : "https://server.example:9443")
 					.setValue(local ? localPath : serverAddress);
-				input.inputEl.type = local ? "text" : "url";
+				if (!local) input.inputEl.inputMode = "url";
 				input.inputEl.spellcheck = false;
 				input.inputEl.setAttribute("aria-label", local ? "PDF folder" : "Server address");
 				input.onChange(value => {

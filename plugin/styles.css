@@ -55,8 +55,14 @@
 	margin-block: var(--size-4-6) var(--size-4-3);
 }
 
+.ol-library .ol-section-heading h3,
+.ol-library h3.ol-section-heading {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-2);
+}
+
 .ol-result-count {
-	margin-inline-start: var(--size-4-2);
 	font-weight: var(--font-normal);
 }
 
@@ -306,14 +312,14 @@
 
 .ol-library .ol-resume > button.ol-resume-book {
 	display: grid;
-	grid-template-columns: min(27%, 4.5rem) minmax(0, 1fr) auto;
+	grid-template-columns: min(30%, 5rem) minmax(0, 1fr) auto;
 	align-items: center;
 	gap: var(--size-4-3);
 	width: 100%;
 	min-width: 0;
 	height: auto;
 	padding: var(--size-4-3);
-	border: 1px solid transparent;
+	border: 1px solid color-mix(in srgb, var(--background-modifier-border) 35%, transparent);
 	border-radius: var(--radius-m);
 	background: var(--background-secondary);
 	box-shadow: none;
@@ -369,7 +375,19 @@
 	color: var(--text-muted);
 }
 
-.ol-connection::before {
+.ol-connection-state {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-1);
+	font-weight: var(--font-semibold);
+}
+
+.ol-connection,
+.ol-connection-state {
+	line-height: 1.25;
+}
+
+:is(.ol-connection, .ol-connection-state)::before {
 	content: "";
 	width: 7px;
 	height: 7px;
@@ -378,14 +396,39 @@
 	background: var(--text-faint);
 }
 
-.ol-connection[data-connected="true"]::before {
+:is(.ol-connection, .ol-connection-state)[data-connected="true"]::before {
 	background: var(--color-green);
 }
 
 .ol-connection-info {
 	margin-bottom: var(--size-4-3);
-	white-space: pre-line;
 	overflow-wrap: anywhere;
+}
+
+.ol-connection-info dl {
+	display: grid;
+	gap: var(--size-4-2);
+	padding-block: var(--size-4-3);
+	margin-block: var(--size-4-3);
+	border-block: 1px solid var(--background-modifier-border);
+}
+
+.ol-connection-info dl > div {
+	display: grid;
+	grid-template-columns: minmax(6rem, 1fr) minmax(0, 2fr);
+	gap: var(--size-4-2);
+}
+
+.ol-connection-info dt {
+	color: var(--text-muted);
+}
+
+.ol-connection-info dd {
+	margin: 0;
+}
+
+.ol-connection-error {
+	color: var(--text-error);
 }
 
 .ol-detail-header {
@@ -502,6 +545,30 @@
 	height: auto;
 	min-height: var(--input-height);
 	white-space: normal;
+}
+
+.ol-source-fields {
+	container-type: inline-size;
+}
+
+.ol-settings .ol-source-setting {
+	align-items: flex-start;
+}
+
+.ol-source-setting input[type="text"] {
+	width: 18rem;
+}
+
+@container (max-width: 30rem) {
+	.ol-settings .ol-source-setting {
+		flex-direction: column;
+		gap: var(--size-4-2);
+	}
+
+	.ol-source-setting .setting-item-control,
+	.ol-source-setting input[type="text"] {
+		width: 100%;
+	}
 }
 
 .ol-settings-actions {
