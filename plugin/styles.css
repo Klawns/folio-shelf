@@ -170,20 +170,17 @@
 }
 
 .ol-library .ol-grid .ol-cover-loaded {
+	aspect-ratio: auto;
 	background: transparent;
 }
 
 .ol-library .ol-grid .ol-cover-loaded > :not(img) {
-	visibility: hidden;
+	display: none;
 }
 
 .ol-library .ol-grid .ol-cover-loaded img {
-	inset: 0 auto auto 50%;
-	transform: translateX(-50%);
-	width: auto;
+	position: static;
 	height: auto;
-	max-width: 100%;
-	max-height: 100%;
 	border-radius: inherit;
 	background: transparent;
 }
