@@ -103,7 +103,13 @@
 }
 
 .ol-grid .ol-card {
-	border: 1px solid var(--background-modifier-border);
+	border: 1px solid color-mix(in srgb, var(--background-modifier-border) 35%, transparent);
+	background: var(--background-secondary);
+}
+
+.ol-grid .ol-card:hover,
+.ol-grid .ol-card:focus-within {
+	background: var(--background-modifier-hover);
 }
 
 .ol-card:hover,
@@ -275,7 +281,11 @@
 
 .ol-resume-section:not(:empty) {
 	padding-bottom: var(--size-4-3);
-	border-bottom: 1px solid var(--background-modifier-border);
+	border-bottom: 1px solid color-mix(in srgb, var(--background-modifier-border) 45%, transparent);
+}
+
+.theme-dark .ol-resume-section:not(:empty) {
+	border-bottom-color: #292b36;
 }
 
 .ol-library .ol-resume-section:not(:empty) + .ol-section-heading {
