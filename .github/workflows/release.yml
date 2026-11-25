@@ -91,5 +91,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$PLUGIN_VERSION" --target "$GITHUB_SHA" --title "$PLUGIN_VERSION" --generate-notes \
-            plugin/manifest.json plugin/main.js plugin/styles.css plugin/obsidian-library-plugin.zip
+          for delay in 10 30 60 0; do
+            if output=$(gh release create "$PLUGIN_VERSION" --target "$GITHUB_SHA" --title "$PLUGIN_VERSION" --generate-notes \
+              plugin/manifest.json plugin/main.js plugin/styles.css plugin/obsidian-library-plugin.zip 2>&1); then
+              printf '%s\n' "$output"
+              exit 0
+            fi
+            printf '%s\n' "$output" >&2
+            if [[ "$delay" == 0 ]] || ! grep -Eq 'HTTP (429|500|502|503|504)([^0-9]|$)' <<< "$output"; then
+              exit 1
+            fi
+            echo "GitHub returned a temporary error. Retrying in ${delay}s."
+            sleep "$delay"
+          done
