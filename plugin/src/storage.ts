@@ -18,6 +18,7 @@ export interface Personal {
 	fileName?: string;
 	organized?: boolean;
 	coverPage?: number;
+	favorite?: boolean;
 }
 
 export class LibraryStorage {
@@ -101,6 +102,7 @@ export class LibraryStorage {
 				folder: typeof data.folder === "string" ? data.folder : undefined,
 				fileName: typeof data.fileName === "string" ? data.fileName : undefined,
 				organized: data.organized === true,
+				favorite: data.favorite === true,
 				coverPage: Number.isSafeInteger(data.coverPage) && data.coverPage > 1 ? data.coverPage : undefined,
 			});
 		}
@@ -195,6 +197,17 @@ export class LibraryStorage {
 		const task = this.findOrCreateNote(book, root).finally(() => this.pendingNotes.delete(book.id));
 		this.pendingNotes.set(book.id, task);
 		return task;
+	}
+
+	studyNotes(book: Book): TFile[] {
+		const record = this.findNote(book);
+		if (!record?.parent) return [];
+		const folder = record.parent.name === "Notes" ? record.parent.path
+			: record.parent.isRoot() ? "Notes" : record.parent.path + "/Notes";
+		const links = this.app.metadataCache.resolvedLinks;
+		const notes = this.app.vault.getMarkdownFiles().filter(file =>
+			file !== record && file.parent?.path === folder && links[file.path]?.[record.path]);
+		return [record, ...notes];
 	}
 
 	private findNote(book: Book): TFile | undefined {

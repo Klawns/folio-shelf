@@ -1,68 +1,124 @@
-.ol-library {
-	padding: var(--size-4-4);
-	overflow: auto;
+.ol-library,
+.ol-book-details,
+.ol-settings {
+	color: var(--text-normal);
+	font-size: var(--font-ui-small);
+	overflow-wrap: anywhere;
 }
 
-.ol-library .ol-toolbar {
+.ol-library,
+.ol-book-details {
+	padding: var(--size-4-4);
+	overflow: auto;
+	container-type: inline-size;
+}
+
+.ol-library h2,
+.ol-settings h2 {
+	margin: 0;
+	font-size: var(--font-ui-larger);
+	line-height: 1.3;
+}
+
+.ol-library h3,
+.ol-book-details h3 {
+	margin: 0;
+	font-size: var(--font-ui-medium);
+}
+
+.ol-toolbar {
 	display: flex;
 	flex-wrap: wrap;
 	align-items: center;
 	gap: var(--size-4-2);
 }
 
-.ol-library .ol-toolbar h2 {
-	margin: 0 auto 0 0;
+.ol-toolbar :is(h2, h3) {
+	margin-inline-end: auto;
 }
 
-.ol-library .ol-message,
-.ol-library .ol-secondary {
+.ol-secondary,
+.ol-message,
+.ol-settings [role="status"] {
 	color: var(--text-muted);
-	font-size: var(--font-ui-small);
+	font-size: var(--font-ui-smaller);
 }
 
-.ol-library .ol-message:not(:empty) {
-	margin: var(--size-4-2) 0;
+.ol-message:not(:empty) {
+	margin-block: var(--size-4-2);
 }
 
-.ol-library .ol-filters {
-	margin-top: var(--size-4-3);
+.ol-library .ol-section-heading {
+	margin-block: var(--size-4-6) var(--size-4-3);
 }
 
-.ol-library .ol-filters input {
-	flex: 1 1 14rem;
-	min-width: 0;
+.ol-result-count {
+	margin-inline-start: var(--size-4-2);
+	font-weight: var(--font-normal);
 }
 
-.ol-library .ol-grid {
-	display: grid;
-	grid-template-columns: repeat(auto-fill, minmax(min(100%, 11rem), 1fr));
-	gap: var(--size-4-3);
+.ol-filters {
 	margin-bottom: var(--size-4-3);
 }
 
-.ol-library .ol-card {
+.ol-filters input {
+	flex: 1 1 13rem;
+	min-width: 0;
+}
+
+.ol-filter-controls {
+	max-width: 100%;
+}
+
+.ol-filter-controls select {
+	max-width: 100%;
+}
+
+.ol-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--ol-cover-size, 150px)), 1fr));
+	gap: var(--size-4-3);
+}
+
+.ol-grid,
+.ol-list {
+	margin-bottom: var(--size-4-3);
+}
+
+.ol-list .ol-card + .ol-card {
+	border-top: 1px solid var(--background-modifier-border);
+}
+
+.ol-card {
 	display: flex;
 	flex-direction: column;
+	gap: var(--size-4-1);
 	min-width: 0;
-	gap: var(--size-4-2);
-	padding: var(--size-4-3);
-	border: 1px solid var(--background-modifier-border);
+	padding: var(--size-4-2);
 	border-radius: var(--radius-m);
+}
+
+.ol-card:hover,
+.ol-card:focus-within {
 	background: var(--background-secondary);
-	overflow-wrap: anywhere;
 }
 
 :is(.ol-library, .ol-book-details) .ol-cover {
 	position: relative;
-	display: grid;
-	place-items: center;
-	aspect-ratio: 4 / 5;
-	max-height: 14rem;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: var(--size-4-1);
+	aspect-ratio: 2 / 3;
+	width: 100%;
+	max-width: var(--ol-cover-size, 150px);
+	min-width: 0;
 	overflow: hidden;
 	border-radius: var(--radius-s);
-	background: var(--background-modifier-hover);
-	color: var(--text-accent);
-	font-size: var(--font-ui-large);
+	background: var(--background-secondary);
+	color: var(--text-muted);
+	box-shadow: 0 1px 3px var(--background-modifier-border);
 	font-weight: var(--font-semibold);
 }
 
@@ -75,199 +131,366 @@
 	background: var(--background-secondary);
 }
 
-.ol-library .ol-card-open {
+.ol-card-open,
+.ol-book-details button.ol-note-link,
+.ol-book-details button.ol-note-create {
 	display: flex;
+	align-items: flex-start;
 	flex-direction: column;
-	align-items: stretch;
 	gap: var(--size-4-2);
 	width: 100%;
-	height: auto;
 	min-width: 0;
+	height: auto;
 	padding: 0;
 	border: 0;
-	border-radius: var(--radius-s);
 	box-shadow: none;
 	background: transparent;
-	text-align: left;
+	text-align: start;
 	white-space: normal;
-	cursor: pointer;
 }
 
-.ol-library .ol-card-open:hover {
+.ol-card-open:hover,
+.ol-book-details :is(.ol-note-link, .ol-note-create):hover {
 	background: transparent;
 	box-shadow: none;
 	color: var(--text-accent);
 }
 
-.ol-library .ol-card-title {
+.ol-card-title {
 	display: -webkit-box;
 	-webkit-box-orient: vertical;
 	-webkit-line-clamp: 2;
-	height: auto;
 	overflow: hidden;
-	text-align: left;
-	white-space: normal;
 	font-weight: var(--font-semibold);
 }
 
-.ol-library .ol-card-labels {
+.ol-card-author {
+	display: block;
+}
+
+.ol-card-info,
+.ol-resume-info {
+	min-width: 0;
+}
+
+.ol-card-footer {
 	display: flex;
-	flex-wrap: wrap;
 	align-items: center;
-	gap: var(--size-4-2);
-}
-
-.ol-library .ol-book-status {
-	padding: 1px var(--size-4-2);
-	border-radius: var(--radius-s);
-	background: var(--background-modifier-hover);
-	color: var(--text-muted);
-	font-size: var(--font-ui-smaller);
-}
-
-.ol-library .ol-card-actions {
+	gap: var(--size-4-1);
 	margin-top: auto;
 }
 
-.ol-library .ol-card-menu {
+.ol-card-footer .ol-progress {
+	flex: 1;
+	min-width: 0;
+}
+
+.ol-card-footer > button {
 	margin-inline-start: auto;
 }
 
-.ol-book-details .ol-detail-hero {
+.ol-list .ol-card-open {
 	display: grid;
-	grid-template-columns: minmax(5rem, 8.5rem) minmax(0, 1fr);
-	gap: var(--size-4-4);
+	grid-template-columns: minmax(2rem, calc(var(--ol-cover-size, 150px) * .28)) minmax(0, 1fr);
+	align-items: center;
+}
+
+.ol-list .ol-card {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) minmax(0, 9rem);
+	align-items: center;
+}
+
+.ol-list .ol-card-footer {
+	margin-top: 0;
+}
+
+.ol-progress-label {
+	display: flex;
+	gap: var(--size-4-1);
+	justify-content: space-between;
+}
+
+.ol-progress progress {
+	appearance: none;
+	display: block;
+	width: 100%;
+	height: 3px;
+	margin-block: var(--size-4-1);
+	border: 0;
+	border-radius: var(--radius-s);
+	overflow: hidden;
+	background: var(--background-modifier-border);
+	accent-color: var(--interactive-accent);
+}
+
+.ol-progress progress::-webkit-progress-bar {
+	background: var(--background-modifier-border);
+}
+
+.ol-progress progress::-webkit-progress-value {
+	background: var(--interactive-accent);
+	border-radius: var(--radius-s);
+}
+
+.ol-resume {
+	display: grid;
+	grid-auto-flow: column;
+	grid-auto-columns: min(100%, 24rem);
+	gap: var(--size-4-3);
+	overflow-x: auto;
+	padding-bottom: var(--size-4-1);
+}
+
+.ol-resume-book {
+	display: grid;
+	grid-template-columns: minmax(2.5rem, 4rem) minmax(0, 1fr);
 	align-items: start;
-}
-
-.ol-book-details .ol-detail-grid {
-	display: grid;
-	grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
-	gap: var(--size-4-3) var(--size-4-4);
-	margin: 0;
-}
-
-.ol-book-details .ol-detail-item {
-	min-width: 0;
-	padding: var(--size-4-2) 0;
-	border-bottom: 1px solid var(--background-modifier-border);
-}
-
-.ol-book-details dt {
-	color: var(--text-muted);
-	font-size: var(--font-ui-small);
-}
-
-.ol-book-details dd {
-	margin: var(--size-4-1) 0 0;
-	color: var(--text-normal);
-	overflow-wrap: anywhere;
-}
-
-.ol-book-details .ol-detail-edit {
-	margin-top: var(--size-4-4);
+	gap: var(--size-4-3);
 	padding: var(--size-4-3);
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--radius-m);
+	background: var(--background-secondary);
 }
 
-.ol-book-details .ol-detail-edit summary {
-	font-weight: var(--font-semibold);
-	cursor: pointer;
+.ol-resume-info > * + * {
+	margin-top: var(--size-4-1);
 }
 
-@media (max-width: 480px) {
-	.ol-book-details .ol-detail-hero {
-		grid-template-columns: 5rem minmax(0, 1fr);
-		gap: var(--size-4-3);
-	}
-}
-
-.ol-library :is(button, input, select):focus-visible {
+:is(.ol-library, .ol-book-details, .ol-settings) :is(button, input, select, summary):focus-visible {
 	outline: 2px solid var(--interactive-accent);
 	outline-offset: 2px;
 }
 
-.is-mobile .ol-library :is(button, input, select) {
-	min-height: 44px;
+:is(.ol-library, .ol-settings) button[aria-pressed="true"] {
+	background: var(--background-modifier-hover);
+	color: var(--text-accent);
 }
 
 .ol-toolbar button.ol-connection {
 	display: inline-flex;
 	align-items: center;
-	gap: 0.5em;
+	gap: var(--size-4-1);
+	box-shadow: none;
+	background: transparent;
+	color: var(--text-muted);
 }
 
 .ol-connection::before {
 	content: "";
-	display: block;
-	width: 10px;
-	height: 10px;
+	width: 7px;
+	height: 7px;
 	flex: none;
 	border-radius: 50%;
-	background: var(--color-red);
+	background: var(--text-faint);
 }
 
 .ol-connection[data-connected="true"]::before {
 	background: var(--color-green);
 }
 
-.ol-settings {
+.ol-connection-info {
+	margin-bottom: var(--size-4-3);
+	white-space: pre-line;
+	overflow-wrap: anywhere;
+}
+
+.ol-detail-header {
+	margin-bottom: var(--size-4-2);
+}
+
+.ol-detail-header > h3 + button,
+.ol-details-modal .ol-detail-header {
+	margin-inline-start: auto;
+}
+
+.ol-details-modal .ol-detail-header {
+	justify-content: end;
+}
+
+.ol-book-details .ol-detail-hero {
 	display: grid;
-	gap: 16px;
+	grid-template-columns: minmax(3rem, 5rem) minmax(0, 1fr);
+	gap: var(--size-4-3);
+	align-items: start;
+}
+
+.ol-book-details h4 {
+	margin: 0 0 var(--size-4-1);
+	font-size: var(--font-ui-small);
+	font-weight: var(--font-semibold);
+}
+
+.ol-detail-badges {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--size-4-1);
+	margin-top: var(--size-4-1);
+}
+
+.ol-detail-badges span {
+	padding-inline: var(--size-4-1);
+	border-radius: var(--radius-s);
+	background: var(--background-modifier-hover);
+	font-size: var(--font-ui-smaller);
+}
+
+.ol-detail-section {
+	margin-top: var(--size-4-3);
+	padding-top: var(--size-4-3);
+	border-top: 1px solid var(--background-modifier-border);
+}
+
+.ol-detail-read {
+	width: 100%;
+	margin-top: var(--size-4-2);
+}
+
+.ol-book-details button.ol-note-link {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr) auto;
+	align-items: center;
+	gap: var(--size-4-2);
+	padding: var(--size-4-2) var(--size-4-1);
+}
+
+.ol-note-link .ol-secondary {
+	display: block;
+}
+
+.ol-note-link .svg-icon {
+	width: 14px;
+	height: 14px;
+	color: var(--text-muted);
+}
+
+.ol-book-details button.ol-note-create {
+	padding: var(--size-4-2) 0;
+	color: var(--text-accent);
+}
+
+.ol-detail-grid {
+	display: grid;
+	gap: var(--size-4-1);
+	margin: 0;
+}
+
+.ol-detail-item {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr);
+	gap: var(--size-4-2);
+}
+
+.ol-detail-item dt {
+	color: var(--text-muted);
+}
+
+.ol-detail-item dd {
+	margin: 0;
+	text-align: end;
+}
+
+.ol-settings-header h2 {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-2);
+	margin-bottom: var(--size-4-1);
+}
+
+.ol-settings-header .svg-icon {
+	color: var(--text-accent);
 }
 
 .ol-settings-section {
-	padding: 16px;
-	min-width: 0;
-	border: 1px solid var(--background-modifier-border);
-	border-radius: var(--radius-m);
-	background: var(--background-secondary);
+	margin-top: var(--size-4-4);
+	padding-top: var(--size-4-2);
+	border-top: 1px solid var(--background-modifier-border);
 }
 
-.ol-settings-section h3 {
-	margin: 0 0 12px;
-}
-
-.ol-settings :is(select, input) {
-	width: 100%;
+.ol-settings .setting-item-control {
+	flex-wrap: wrap;
 	min-width: 0;
 }
 
-.ol-source-fields:not(:empty) {
-	margin-top: 16px;
+.ol-settings .setting-item-control :is(input, button, select) {
+	max-width: 100%;
 }
 
-.ol-source-fields label {
-	display: grid;
-	gap: 6px;
-	font-weight: var(--font-medium);
-}
-
-.ol-source-fields summary {
-	cursor: pointer;
-}
-
-.ol-settings-help,
-.ol-settings-actions [role="status"] {
-	color: var(--text-muted);
-	font-size: var(--font-ui-small);
-	overflow-wrap: anywhere;
+.ol-settings .setting-item-control button {
+	height: auto;
+	min-height: var(--input-height);
+	white-space: normal;
 }
 
 .ol-settings-actions {
 	display: flex;
 	align-items: center;
-	flex-wrap: wrap;
-	gap: 8px 12px;
-	margin-top: 12px;
+	justify-content: space-between;
+	gap: var(--size-4-2);
+	margin-block: var(--size-4-2);
 }
 
-.ol-settings .setting-item {
-	display: grid;
-	gap: 8px;
+.ol-settings [data-connected="true"]::before {
+	content: "";
+	display: inline-block;
+	width: 7px;
+	height: 7px;
+	margin-inline-end: var(--size-4-1);
+	border-radius: 50%;
+	background: var(--color-green);
 }
 
-.ol-settings .setting-item-control {
-	justify-content: flex-start;
+.ol-server-guide {
+	color: var(--text-accent);
+	font-size: var(--font-ui-smaller);
+}
+
+.ol-server-guide summary {
+	cursor: pointer;
+}
+
+.ol-server-guide p {
+	color: var(--text-muted);
+}
+
+@container (max-width: 380px) {
+	.ol-list .ol-card {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.ol-filter-controls {
+		width: 100%;
+	}
+}
+
+.is-mobile .ol-grid {
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@container (max-width: 280px) {
+	.is-mobile .ol-grid {
+		grid-template-columns: minmax(0, 1fr);
+	}
+}
+
+.is-mobile :is(.ol-library, .ol-book-details, .ol-settings, .ol-filter-controls) :is(button, select, input[type="search"]) {
+	min-height: 44px;
+}
+
+.is-mobile :is(.ol-library, .ol-book-details, .ol-settings) .ol-icon-button {
+	min-width: 44px;
+}
+
+.is-mobile .ol-details-modal {
+	width: 100%;
+	max-width: 100%;
+	height: 100dvh;
+	max-height: 100dvh;
+	margin: 0;
+	padding-top: max(var(--size-4-4), env(safe-area-inset-top));
+	padding-bottom: max(var(--size-4-4), env(safe-area-inset-bottom));
+}
+
+.is-mobile .ol-details-modal .ol-book-details {
+	padding-inline: 0;
 }

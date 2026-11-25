@@ -3,7 +3,7 @@ import { checkLocalPDF, scanLocalFolder } from "./local";
 import { Book, NOTES, PERSONAL, Progress, SNAPSHOT, STATE, endpoint, hasConflict, idPattern, progressHeads, referencePath } from "./model";
 import { checkPDF, checkServer, fetchCatalog } from "./remote";
 import { LibraryStorage, Personal } from "./storage";
-import { LibraryView, VIEW, renderLibrarySettings } from "./view";
+import { BookDetailsView, DETAILS_VIEW, LibraryView, VIEW, renderLibrarySettings } from "./view";
 
 interface PDFViewer {
 	currentPageNumber: number;
@@ -28,6 +28,11 @@ export default class LibraryPlugin extends Plugin {
 	localFolder = "";
 	studyRoot = NOTES.slice(0, -1);
 	studyTemplate = "";
+	appearance = { layout: "grid" as "grid" | "list", coverSize: 150, showProgress: true };
+	lastRefresh?: Date;
+	addedAt: Record<string, number> = {};
+	private trackAdditions = false;
+	private settingsWrite = Promise.resolve();
 	books: Book[] = [];
 	connected = false;
 	error = "";
@@ -47,7 +52,18 @@ export default class LibraryPlugin extends Plugin {
 
 	async onload(): Promise<void> {
 		this.storage = new LibraryStorage(this.app);
+		const added: unknown = this.app.loadLocalStorage("obsidian-library-first-seen");
+		if (added && typeof added === "object") {
+			for (const [id, date] of Object.entries(added)) {
+				if (idPattern.test(id) && typeof date === "number" && Number.isFinite(date)) this.addedAt[id] = date;
+			}
+		}
+		this.trackAdditions = true;
 		const settings = await this.loadData();
+		if (settings?.appearance?.layout === "list") this.appearance.layout = "list";
+		const coverSize = settings?.appearance?.coverSize;
+		if (typeof coverSize === "number" && coverSize >= 110 && coverSize <= 220) this.appearance.coverSize = coverSize;
+		if (typeof settings?.appearance?.showProgress === "boolean") this.appearance.showProgress = settings.appearance.showProgress;
 		if (typeof settings?.studyRoot === "string") this.studyRoot = settings.studyRoot;
 		if (typeof settings?.studyTemplate === "string") this.studyTemplate = settings.studyTemplate;
 		if (typeof settings?.origin === "string") {
@@ -60,6 +76,7 @@ export default class LibraryPlugin extends Plugin {
 		const localFolder: unknown = this.app.loadLocalStorage(LOCAL_FOLDER_KEY);
 		if (!Platform.isMobile && typeof localFolder === "string") this.localFolder = localFolder;
 		this.registerView(VIEW, leaf => new LibraryView(leaf, this));
+		this.registerView(DETAILS_VIEW, leaf => new BookDetailsView(leaf));
 		this.addRibbonIcon("library", "Open library", () => void this.run(() => this.openLibrary()));
 		this.addCommand({ id: "open-library", name: "Open library", callback: () => void this.run(() => this.openLibrary()) });
 		this.addCommand({ id: "open-book-note", name: "Open notes for the current book", checkCallback: checking => {
@@ -102,10 +119,17 @@ export default class LibraryPlugin extends Plugin {
 				}, 150);
 			};
 			this.registerEvent(this.app.metadataCache.on("changed", file => update(file.path)));
-			this.registerEvent(this.app.vault.on("delete", file => update(file.path)));
+			this.registerEvent(this.app.metadataCache.on("resolve", file => {
+				if (!file.path.startsWith(STATE + "/")) this.redrawDetails();
+			}));
+			this.registerEvent(this.app.vault.on("delete", file => {
+				update(file.path);
+				if (file.path.endsWith(".md")) this.redrawDetails();
+			}));
 			this.registerEvent(this.app.vault.on("rename", (file, previous) => {
 				update(previous);
 				update(file.path);
+				if (file.path.endsWith(".md")) this.redrawDetails();
 			}));
 			void this.run(async () => {
 				await this.loadSnapshot();
@@ -148,11 +172,21 @@ export default class LibraryPlugin extends Plugin {
 		return this.catalogIdentity?.origin === origin && this.catalogIdentity.version === version;
 	}
 
+	private setBooks(books: Book[]): void {
+		this.books = books;
+		if (!this.trackAdditions) return;
+		const newBooks = books.filter(book => this.addedAt[book.id] === undefined);
+		if (!newBooks.length) return;
+		const now = Date.now();
+		for (const book of newBooks) this.addedAt[book.id] = now;
+		this.app.saveLocalStorage("obsidian-library-first-seen", this.addedAt);
+	}
+
 	private applyCatalog(origin: string, state: { version: string; books: Book[] }): void {
 		if (this.hasCatalog(origin, state.version)) return;
 		this.catalogIdentity = { origin, version: state.version };
 		this.snapshotSaved = false;
-		this.books = state.books;
+		this.setBooks(state.books);
 		void this.regenerateReferences();
 	}
 
@@ -198,8 +232,9 @@ export default class LibraryPlugin extends Plugin {
 		try {
 			const state = await scanLocalFolder(folder, this.deviceId);
 			if (this.stopped) return;
-			this.books = state.books;
+			this.setBooks(state.books);
 			this.connected = true;
+			this.lastRefresh = new Date();
 		} catch (error) {
 			this.connected = false;
 			this.error = error instanceof Error ? error.message : "Could not scan the PDF folder.";
@@ -221,9 +256,10 @@ export default class LibraryPlugin extends Plugin {
 			this.localFolder = state.folder;
 			this.catalogIdentity = undefined;
 			this.snapshotSaved = false;
-			this.books = state.books;
+			this.setBooks(state.books);
 			this.error = "";
 			this.connected = true;
+			this.lastRefresh = new Date();
 		} finally {
 			this.changingSource = false;
 			this.redraw();
@@ -243,6 +279,7 @@ export default class LibraryPlugin extends Plugin {
 			if (this.stopped || this.origin !== origin) return;
 			this.applyCatalog(origin, state);
 			this.connected = true;
+			this.lastRefresh = new Date();
 			if (this.snapshotSaved) return;
 			try {
 				await this.storage.saveSnapshot({ schema: 1, origin, ...state });
@@ -271,12 +308,12 @@ export default class LibraryPlugin extends Plugin {
 				? { version, books: this.books }
 				: await fetchCatalog(origin);
 			if (this.stopped) return;
-			await this.saveData({ origin, studyRoot: this.studyRoot, studyTemplate: this.studyTemplate });
+			await this.saveSettings(origin);
 			this.app.saveLocalStorage(LOCAL_FOLDER_KEY, "");
 			this.localFolder = "";
-			this.origin = origin;
 			this.applyCatalog(origin, state);
 			this.connected = true;
+			this.lastRefresh = new Date();
 			this.error = "";
 			if (!this.snapshotSaved) {
 				try {
@@ -297,6 +334,13 @@ export default class LibraryPlugin extends Plugin {
 		for (const leaf of this.app.workspace.getLeavesOfType(VIEW)) {
 			const view = leaf.view;
 			if (view instanceof LibraryView) void this.run(() => view.render());
+		}
+	}
+
+	private redrawDetails(): void {
+		if (!this.app.workspace.getLeavesOfType(DETAILS_VIEW).length) return;
+		for (const leaf of this.app.workspace.getLeavesOfType(VIEW)) {
+			if (leaf.view instanceof LibraryView) leaf.view.refreshDetails();
 		}
 	}
 
@@ -376,11 +420,11 @@ export default class LibraryPlugin extends Plugin {
 		return enabled.has("pdf-plus") ? "enabled" : "disabled";
 	}
 
-	async openBook(book: Book, page = 1): Promise<void> {
-		await this.openPDF(book, page);
+	async openBook(book: Book, page = 1, side = false): Promise<void> {
+		await this.openPDF(book, page, side);
 	}
 
-	private async openPDF(book: Book, page: number): Promise<WorkspaceLeaf> {
+	private async openPDF(book: Book, page: number, side = false): Promise<WorkspaceLeaf> {
 		if (this.pdfPlusStatus() === "disabled") throw new Error("Enable PDF++ to open external references.");
 		if (book.availability === "missing") throw new Error("Book not found on the server.");
 		const linked = this.storage.folderReference(this.storage.personals().get(book.id));
@@ -389,7 +433,7 @@ export default class LibraryPlugin extends Plugin {
 			throw new Error("Could not load the PDF. " + (error instanceof Error ? error.message : "Check your connection to the library server."));
 		});
 		const [file] = await Promise.all([this.storage.ensureReference(book, linked), available]);
-		const leaf = this.app.workspace.getLeaf("tab");
+		const leaf = this.app.workspace.getLeaf(side ? "split" : "tab");
 		if (page > 1) {
 			try {
 				await leaf.openFile(file, { active: true, eState: { subpath: "#page=" + page } });
@@ -453,8 +497,16 @@ export default class LibraryPlugin extends Plugin {
 		await noteLeaf.openFile(note, { active: true });
 	}
 
-	async saveSettings(): Promise<void> {
-		await this.saveData({ origin: this.origin, studyRoot: this.studyRoot, studyTemplate: this.studyTemplate });
+	saveSettings(origin?: string): Promise<void> {
+		const write = this.settingsWrite.then(async () => {
+			await this.saveData({
+				origin: origin ?? this.origin, studyRoot: this.studyRoot,
+				studyTemplate: this.studyTemplate, appearance: this.appearance,
+			});
+			if (origin !== undefined) this.origin = origin;
+		});
+		this.settingsWrite = write.catch(() => {});
+		return write;
 	}
 }
 
