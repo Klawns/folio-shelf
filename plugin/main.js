@@ -846,7 +846,11 @@ var LibraryView = class extends import_obsidian3.ItemView {
     const src = selectedPage ? book.readUrl.replace(/\/file$/, "/cover?page=" + selectedPage) : book.coverUrl;
     if (!src) return;
     const image = cover.createEl("img", { attr: { loading: "lazy", alt: "", src } });
+    const markLoaded = () => cover.addClass("ol-cover-loaded");
+    image.addEventListener("load", markLoaded);
+    if (image.complete && image.naturalWidth > 0) markLoaded();
     image.addEventListener("error", () => {
+      cover.classList.remove("ol-cover-loaded");
       if (selectedPage && book.coverUrl && image.getAttribute("src") !== book.coverUrl) image.src = book.coverUrl;
       else image.remove();
     });
