@@ -1,0 +1,8 @@
+plugin/node_modules/
+server/obsidian-library
+server/obsidian-library.exe
+server/.env
+.env
+.env.backup-*
+.books-*
+dist/

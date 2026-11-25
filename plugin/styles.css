@@ -1,0 +1,213 @@
+.ol-library {
+	padding: var(--size-4-4);
+	overflow: auto;
+}
+
+.ol-library .ol-toolbar {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--size-4-2);
+}
+
+.ol-library .ol-toolbar h2 {
+	margin: 0 auto 0 0;
+}
+
+.ol-library .ol-message,
+.ol-library .ol-secondary {
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+}
+
+.ol-library .ol-message:not(:empty) {
+	margin: var(--size-4-2) 0;
+}
+
+.ol-library .ol-filters {
+	margin-top: var(--size-4-3);
+}
+
+.ol-library .ol-filters input {
+	flex: 1 1 14rem;
+	min-width: 0;
+}
+
+.ol-library .ol-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(min(100%, 11rem), 1fr));
+	gap: var(--size-4-3);
+	margin-bottom: var(--size-4-3);
+}
+
+.ol-library .ol-card {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	gap: var(--size-4-2);
+	padding: var(--size-4-3);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	background: var(--background-secondary);
+	overflow-wrap: anywhere;
+}
+
+:is(.ol-library, .ol-book-details) .ol-cover {
+	position: relative;
+	display: grid;
+	place-items: center;
+	aspect-ratio: 4 / 5;
+	max-height: 14rem;
+	overflow: hidden;
+	border-radius: var(--radius-s);
+	background: var(--background-modifier-hover);
+	color: var(--text-accent);
+	font-size: var(--font-ui-large);
+	font-weight: var(--font-semibold);
+}
+
+:is(.ol-library, .ol-book-details) .ol-cover img {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	object-fit: contain;
+	background: var(--background-secondary);
+}
+
+.ol-library .ol-card-open {
+	display: flex;
+	flex-direction: column;
+	align-items: stretch;
+	gap: var(--size-4-2);
+	width: 100%;
+	height: auto;
+	min-width: 0;
+	padding: 0;
+	border: 0;
+	border-radius: var(--radius-s);
+	box-shadow: none;
+	background: transparent;
+	text-align: left;
+	white-space: normal;
+	cursor: pointer;
+}
+
+.ol-library .ol-card-open:hover {
+	background: transparent;
+	box-shadow: none;
+	color: var(--text-accent);
+}
+
+.ol-library .ol-card-title {
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 2;
+	height: auto;
+	overflow: hidden;
+	text-align: left;
+	white-space: normal;
+	font-weight: var(--font-semibold);
+}
+
+.ol-library .ol-card-labels {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--size-4-2);
+}
+
+.ol-library .ol-book-status {
+	padding: 1px var(--size-4-2);
+	border-radius: var(--radius-s);
+	background: var(--background-modifier-hover);
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+.ol-library .ol-card-actions {
+	margin-top: auto;
+}
+
+.ol-library .ol-card-menu {
+	margin-inline-start: auto;
+}
+
+.ol-book-details .ol-detail-hero {
+	display: grid;
+	grid-template-columns: minmax(5rem, 8.5rem) minmax(0, 1fr);
+	gap: var(--size-4-4);
+	align-items: start;
+}
+
+.ol-book-details .ol-detail-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
+	gap: var(--size-4-3) var(--size-4-4);
+	margin: 0;
+}
+
+.ol-book-details .ol-detail-item {
+	min-width: 0;
+	padding: var(--size-4-2) 0;
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.ol-book-details dt {
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+}
+
+.ol-book-details dd {
+	margin: var(--size-4-1) 0 0;
+	color: var(--text-normal);
+	overflow-wrap: anywhere;
+}
+
+.ol-book-details .ol-detail-edit {
+	margin-top: var(--size-4-4);
+	padding: var(--size-4-3);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+}
+
+.ol-book-details .ol-detail-edit summary {
+	font-weight: var(--font-semibold);
+	cursor: pointer;
+}
+
+@media (max-width: 480px) {
+	.ol-book-details .ol-detail-hero {
+		grid-template-columns: 5rem minmax(0, 1fr);
+		gap: var(--size-4-3);
+	}
+}
+
+.ol-library :is(button, input, select):focus-visible {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 2px;
+}
+
+.is-mobile .ol-library :is(button, input, select) {
+	min-height: 44px;
+}
+
+.ol-toolbar button.ol-connection {
+	width: 30px;
+	height: 30px;
+	padding: 0;
+}
+
+.ol-connection::before {
+	content: "";
+	display: block;
+	width: 10px;
+	height: 10px;
+	margin: auto;
+	border-radius: 50%;
+	background: var(--color-red);
+}
+
+.ol-connection[data-connected="true"]::before {
+	background: var(--color-green);
+}

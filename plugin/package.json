@@ -1,0 +1,16 @@
+{
+  "name": "obsidian-library",
+  "version": "0.2.3",
+  "private": true,
+  "scripts": {
+    "build": "tsc --noEmit && node esbuild.config.mjs",
+    "test": "vitest run",
+    "version": "node version.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "obsidian": "^1.8.7",
+    "typescript": "^5.8.3",
+    "vitest": "^4.1.12"
+  }
+}

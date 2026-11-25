@@ -1,0 +1,34 @@
+services:
+  obsidian-library:
+    image: obsidian-library:local
+    build: ./server
+    network_mode: host
+    user: "${LIBRARY_UID:-10001}:${LIBRARY_GID:-10001}"
+    group_add:
+      - "${LIBRARY_BOOKS_GID:-10001}"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    environment:
+      LIBRARY_ROOT: /books
+      LIBRARY_INDEX: /state/catalog.json
+      LIBRARY_LISTEN: 127.0.0.1:8091
+      LIBRARY_PUBLIC_URL: ${LIBRARY_PUBLIC_URL:?Defina LIBRARY_PUBLIC_URL}
+      LIBRARY_SCAN_INTERVAL: ${LIBRARY_SCAN_INTERVAL:-15m}
+      LIBRARY_PDF_ORIGIN: ${LIBRARY_PDF_ORIGIN:-}
+      LIBRARY_GENERATE_COVERS: ${LIBRARY_GENERATE_COVERS:-true}
+    volumes:
+      - type: bind
+        source: ${LIBRARY_BOOKS_DIR:?Defina LIBRARY_BOOKS_DIR}
+        target: /books
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${LIBRARY_STATE_DIR:?Defina LIBRARY_STATE_DIR}
+        target: /state
+        bind:
+          create_host_path: false

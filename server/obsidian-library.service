@@ -1,0 +1,23 @@
+[Unit]
+Description=Obsidian Library catalog and PDF service
+After=local-fs.target
+
+[Service]
+Type=simple
+User=obsidian-library
+Group=obsidian-library
+EnvironmentFile=/etc/obsidian-library.env
+ExecStart=/usr/local/bin/obsidian-library
+StateDirectory=obsidian-library
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+NoNewPrivileges=true
+Nice=5
+IOSchedulingClass=best-effort
+IOSchedulingPriority=6
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target

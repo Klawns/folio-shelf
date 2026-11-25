@@ -1,0 +1,9 @@
+{
+  "id": "obsidian-library",
+  "name": "Obsidian Library",
+  "version": "0.2.3",
+  "minAppVersion": "1.8.0",
+  "description": "Remote PDF library with notes and reading progress in Obsidian.",
+  "author": "Fabricio",
+  "isDesktopOnly": false
+}
