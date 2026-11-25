@@ -84,6 +84,32 @@
 	max-width: 100%;
 }
 
+.ol-library .ol-filter-button {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--size-4-2);
+	min-width: 0;
+	max-width: 100%;
+	border-radius: var(--radius-m);
+}
+
+.ol-filter-button > span:first-child {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.ol-filter-button > span:last-child {
+	display: flex;
+	flex: none;
+	color: var(--text-muted);
+}
+
+.ol-filter-button .svg-icon {
+	width: var(--icon-xs);
+	height: var(--icon-xs);
+}
+
 .ol-grid {
 	display: grid;
 	grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--ol-cover-size, 150px)), 1fr));

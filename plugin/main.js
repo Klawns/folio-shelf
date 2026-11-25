@@ -486,6 +486,8 @@ var BookDetailsView = class extends import_obsidian3.ItemView {
   }
 };
 var PAGE_SIZE = 10;
+var STATUSES = [["", "All statuses"], ["reading", "Reading"], ["new", "Unread"], ["done", "Finished"], ["favorite", "Favorites"]];
+var SORTS = [["title", "Title"], ["author", "Author"], ["reading", "Last read"], ["added", "Recently added"]];
 var collator = new Intl.Collator("en", { sensitivity: "base", numeric: true });
 var normalize = (value) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("en");
 var LibraryView = class extends import_obsidian3.ItemView {
@@ -499,7 +501,7 @@ var LibraryView = class extends import_obsidian3.ItemView {
     __publicField(this, "isRenderingEnabled", false);
     __publicField(this, "body");
     __publicField(this, "message");
-    __publicField(this, "categories");
+    __publicField(this, "syncFilters");
     __publicField(this, "clearFilters");
     __publicField(this, "sort", "title");
     __publicField(this, "layoutButtons", /* @__PURE__ */ new Map());
@@ -551,31 +553,22 @@ var LibraryView = class extends import_obsidian3.ItemView {
     filterModal?.setTitle("Filter and sort");
     if (filterModal) this.iconButton(toolbar, "Filter and sort", "list-filter", () => filterModal.open());
     const filters = (filterModal?.contentEl ?? toolbar).createDiv("ol-toolbar ol-filter-controls");
-    const statuses = filters.createEl("select", { attr: { "aria-label": "Reading status" } });
-    for (const [value, text] of [["", "All statuses"], ["reading", "Reading"], ["new", "Unread"], ["done", "Finished"], ["favorite", "Favorites"]]) {
-      statuses.createEl("option", { value, text });
-    }
-    statuses.value = this.status;
-    statuses.addEventListener("change", () => {
-      this.status = statuses.value;
-      this.reset();
+    const updateStatus = this.filterControl(filters, "Reading status", (value) => {
+      this.status = value;
     });
-    this.categories = filters.createEl("select", { attr: { "aria-label": "Category" } });
-    this.categories.addEventListener("change", () => {
-      this.category = this.categories.value;
-      this.reset();
+    const updateCategory = this.filterControl(filters, "Category", (value) => {
+      this.category = value;
     });
-    const sort = filters.createEl("select", { attr: { "aria-label": "Sort by" } });
-    for (const [value, text] of [["title", "Title"], ["author", "Author"], ["reading", "Last read"], ["added", "Recently added"]]) {
-      sort.createEl("option", { value, text });
-    }
-    sort.value = this.sort;
-    sort.addEventListener("change", () => {
-      this.sort = sort.value;
-      this.reset();
+    const updateSort = this.filterControl(filters, "Sort by", (value) => {
+      this.sort = value;
     });
+    this.syncFilters = (categories) => {
+      updateStatus(STATUSES, this.status);
+      updateCategory([["", "All categories"], ...categories.map((name) => [name, name])], this.category);
+      updateSort(SORTS, this.sort);
+    };
     this.clearFilters = () => {
-      this.query = search.value = this.category = this.categories.value = this.status = statuses.value = "";
+      this.query = search.value = this.category = this.status = "";
       this.reset();
       search.focus();
     };
@@ -594,6 +587,50 @@ var LibraryView = class extends import_obsidian3.ItemView {
     this.isRenderingEnabled = true;
     await this.render();
   }
+  filterControl(parent, name, change) {
+    const selectValue = (value2) => {
+      change(value2);
+      this.reset();
+    };
+    if (import_obsidian3.Platform.isMobile) {
+      const select = parent.createEl("select", { attr: { "aria-label": name } });
+      select.addEventListener("change", () => selectValue(select.value));
+      return (options2, value2) => {
+        select.empty();
+        for (const [key, text] of options2) select.createEl("option", { value: key, text });
+        select.value = value2;
+      };
+    }
+    let options = [];
+    let value = "";
+    const button = this.button(parent, "", () => {
+      const menu = new import_obsidian3.Menu();
+      for (const [key, text] of options) {
+        menu.addItem((item) => item.setTitle(text).setChecked(key === value).onClick(() => selectValue(key)));
+      }
+      const rect = button.getBoundingClientRect();
+      button.setAttribute("aria-expanded", "true");
+      menu.onHide(() => button.setAttribute("aria-expanded", "false"));
+      menu.showAtPosition({ x: rect.left, y: rect.bottom }, button.ownerDocument);
+    });
+    button.addClass("ol-filter-button");
+    button.setAttribute("aria-haspopup", "menu");
+    button.setAttribute("aria-expanded", "false");
+    const label = button.createSpan();
+    (0, import_obsidian3.setIcon)(button.createSpan({ attr: { "aria-hidden": "true" } }), "chevron-down");
+    return (nextOptions, nextValue) => {
+      options = nextOptions;
+      value = nextValue;
+      const text = options.find(([key]) => key === value)?.[1] ?? name;
+      label.setText(text);
+      button.setAttribute("aria-label", name + ": " + text);
+    };
+  }
+  updateFilters() {
+    const categories = [...new Set(this.books.map((book) => this.categoryFor(book)))].sort(collator.compare);
+    if (this.category && !categories.includes(this.category)) this.category = "";
+    this.syncFilters(categories);
+  }
   async onClose() {
     this.isRenderingEnabled = false;
   }
@@ -603,12 +640,7 @@ var LibraryView = class extends import_obsidian3.ItemView {
     this.heads = new Map([...this.plugin.storage.progress()].map(([id, entries]) => [id, progressHeads(entries)]));
     const deleted = this.plugin.storage.deletedBookIds();
     this.books = this.plugin.books.filter((book) => !deleted.has(book.id));
-    const categories = [...new Set(this.books.map((book) => this.categoryFor(book)))].sort(collator.compare);
-    this.categories.empty();
-    this.categories.createEl("option", { value: "", text: "All categories" });
-    for (const category of categories) this.categories.createEl("option", { value: category, text: category });
-    if (this.category && !categories.includes(this.category)) this.category = "";
-    this.categories.value = this.category;
+    this.updateFilters();
     const local = Boolean(this.plugin.localFolder);
     const configured = local || Boolean(this.plugin.origin);
     const state = this.plugin.busy ? "Refreshing" : this.plugin.connected ? local ? "Local folder" : "Connected" : configured ? "Unavailable" : "Set up library";
@@ -653,6 +685,7 @@ var LibraryView = class extends import_obsidian3.ItemView {
   }
   reset() {
     this.page = 1;
+    this.updateFilters();
     this.draw();
   }
   title(book) {

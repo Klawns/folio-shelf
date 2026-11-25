@@ -16,7 +16,11 @@ export class BookDetailsView extends ItemView {
 	}
 }
 
+type FilterOption = readonly [value: string, label: string];
+
 const PAGE_SIZE = 10;
+const STATUSES: FilterOption[] = [["", "All statuses"], ["reading", "Reading"], ["new", "Unread"], ["done", "Finished"], ["favorite", "Favorites"]];
+const SORTS: FilterOption[] = [["title", "Title"], ["author", "Author"], ["reading", "Last read"], ["added", "Recently added"]];
 const collator = new Intl.Collator("en", { sensitivity: "base", numeric: true });
 const normalize = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("en");
 
@@ -28,7 +32,7 @@ export class LibraryView extends ItemView {
 	private isRenderingEnabled = false;
 	private body!: HTMLElement;
 	private message!: HTMLElement;
-	private categories!: HTMLSelectElement;
+	private syncFilters!: (categories: string[]) => void;
 	private clearFilters!: () => void;
 	private sort = "title";
 	private layoutButtons = new Map<string, HTMLButtonElement>();
@@ -71,22 +75,16 @@ export class LibraryView extends ItemView {
 		filterModal?.setTitle("Filter and sort");
 		if (filterModal) this.iconButton(toolbar, "Filter and sort", "list-filter", () => filterModal.open());
 		const filters = (filterModal?.contentEl ?? toolbar).createDiv("ol-toolbar ol-filter-controls");
-		const statuses = filters.createEl("select", { attr: { "aria-label": "Reading status" } });
-		for (const [value, text] of [["", "All statuses"], ["reading", "Reading"], ["new", "Unread"], ["done", "Finished"], ["favorite", "Favorites"]]) {
-			statuses.createEl("option", { value, text });
-		}
-		statuses.value = this.status;
-		statuses.addEventListener("change", () => { this.status = statuses.value; this.reset(); });
-		this.categories = filters.createEl("select", { attr: { "aria-label": "Category" } });
-		this.categories.addEventListener("change", () => { this.category = this.categories.value; this.reset(); });
-		const sort = filters.createEl("select", { attr: { "aria-label": "Sort by" } });
-		for (const [value, text] of [["title", "Title"], ["author", "Author"], ["reading", "Last read"], ["added", "Recently added"]]) {
-			sort.createEl("option", { value, text });
-		}
-		sort.value = this.sort;
-		sort.addEventListener("change", () => { this.sort = sort.value; this.reset(); });
+		const updateStatus = this.filterControl(filters, "Reading status", value => { this.status = value; });
+		const updateCategory = this.filterControl(filters, "Category", value => { this.category = value; });
+		const updateSort = this.filterControl(filters, "Sort by", value => { this.sort = value; });
+		this.syncFilters = categories => {
+			updateStatus(STATUSES, this.status);
+			updateCategory([["", "All categories"], ...categories.map((name): FilterOption => [name, name])], this.category);
+			updateSort(SORTS, this.sort);
+		};
 		this.clearFilters = () => {
-			this.query = search.value = this.category = this.categories.value = this.status = statuses.value = "";
+			this.query = search.value = this.category = this.status = "";
 			this.reset();
 			search.focus();
 		};
@@ -106,6 +104,51 @@ export class LibraryView extends ItemView {
 		await this.render();
 	}
 
+	private filterControl(parent: HTMLElement, name: string, change: (value: string) => void):
+		(options: FilterOption[], value: string) => void {
+		const selectValue = (value: string) => { change(value); this.reset(); };
+		if (Platform.isMobile) {
+			const select = parent.createEl("select", { attr: { "aria-label": name } });
+			select.addEventListener("change", () => selectValue(select.value));
+			return (options, value) => {
+				select.empty();
+				for (const [key, text] of options) select.createEl("option", { value: key, text });
+				select.value = value;
+			};
+		}
+
+		let options: FilterOption[] = [];
+		let value = "";
+		const button = this.button(parent, "", () => {
+			const menu = new Menu();
+			for (const [key, text] of options) {
+				menu.addItem(item => item.setTitle(text).setChecked(key === value).onClick(() => selectValue(key)));
+			}
+			const rect = button.getBoundingClientRect();
+			button.setAttribute("aria-expanded", "true");
+			menu.onHide(() => button.setAttribute("aria-expanded", "false"));
+			menu.showAtPosition({ x: rect.left, y: rect.bottom }, button.ownerDocument);
+		});
+		button.addClass("ol-filter-button");
+		button.setAttribute("aria-haspopup", "menu");
+		button.setAttribute("aria-expanded", "false");
+		const label = button.createSpan();
+		setIcon(button.createSpan({ attr: { "aria-hidden": "true" } }), "chevron-down");
+		return (nextOptions, nextValue) => {
+			options = nextOptions;
+			value = nextValue;
+			const text = options.find(([key]) => key === value)?.[1] ?? name;
+			label.setText(text);
+			button.setAttribute("aria-label", name + ": " + text);
+		};
+	}
+
+	private updateFilters(): void {
+		const categories = [...new Set(this.books.map(book => this.categoryFor(book)))].sort(collator.compare);
+		if (this.category && !categories.includes(this.category)) this.category = "";
+		this.syncFilters(categories);
+	}
+
 	async onClose(): Promise<void> {
 		this.isRenderingEnabled = false;
 	}
@@ -116,12 +159,7 @@ export class LibraryView extends ItemView {
 		this.heads = new Map([...this.plugin.storage.progress()].map(([id, entries]) => [id, progressHeads(entries)]));
 		const deleted = this.plugin.storage.deletedBookIds();
 		this.books = this.plugin.books.filter(book => !deleted.has(book.id));
-		const categories = [...new Set(this.books.map(book => this.categoryFor(book)))].sort(collator.compare);
-		this.categories.empty();
-		this.categories.createEl("option", { value: "", text: "All categories" });
-		for (const category of categories) this.categories.createEl("option", { value: category, text: category });
-		if (this.category && !categories.includes(this.category)) this.category = "";
-		this.categories.value = this.category;
+		this.updateFilters();
 		const local = Boolean(this.plugin.localFolder);
 		const configured = local || Boolean(this.plugin.origin);
 		const state = this.plugin.busy ? "Refreshing" : this.plugin.connected
@@ -169,6 +207,7 @@ export class LibraryView extends ItemView {
 
 	private reset(): void {
 		this.page = 1;
+		this.updateFilters();
 		this.draw();
 	}
 
