@@ -31,16 +31,11 @@ Open the library from the ribbon or with **Open library**. Click the red or gree
 
 ### Publish an update
 
-The first prepared version is `0.2.3`. For later releases, run `npm --prefix plugin version patch --no-git-tag-version` from the repository root. Use `minor` or `major` for larger version changes. This updates both manifests and the npm package and lockfile together.
+For a new release, run `npm --prefix plugin version patch --no-git-tag-version` from the repository root. Use `minor` or `major` for larger version changes. This updates both manifests and the npm package and lockfile together.
 
-Commit the changes and push the branch. Tag that commit with the exact manifest version, without a `v` prefix, then push the tag. For version `0.2.3`:
+Commit the changes and push or merge them into `main`. GitHub Actions verifies the versions, runs the plugin tests, and builds the bundle. For an unpublished version, it creates the matching tag and release and uploads the individual Obsidian files and a ZIP. Pushes with an already released version keep the existing release. Check progress under **Actions → Release Obsidian plugin**.
 
-```sh
-git tag 0.2.3
-git push origin 0.2.3
-```
-
-GitHub Actions verifies the versions, runs the plugin tests, builds the bundle, and publishes the individual Obsidian files and a ZIP. This release workflow covers the Obsidian plugin. Update the Raspberry Pi service using the deployment steps above when a change requires it.
+Update the Raspberry Pi service using the deployment steps above when a change requires it.
 
 ## Read and sync
 

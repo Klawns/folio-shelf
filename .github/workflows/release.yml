@@ -2,15 +2,16 @@ name: Release Obsidian plugin
 
 on:
   push:
-    tags:
-      - '[0-9]+.[0-9]+.[0-9]+'
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
   release:
-    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    runs-on: windows-latest
     permissions:
       contents: write
     steps:
@@ -19,32 +20,46 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v5
         with:
-          node-version: '22'
+          node-version: '24'
           cache: npm
           cache-dependency-path: plugin/package-lock.json
       - name: Verify version
+        shell: bash
         run: |
-          node <<'NODE'
+          version=$(node <<'NODE'
           const assert = require('node:assert/strict');
           const manifest = require('./manifest.json');
           const pkg = require('./plugin/package.json');
           const lock = require('./plugin/package-lock.json');
-          assert.equal(process.env.GITHUB_REF_NAME, manifest.version);
+          assert.match(manifest.version, /^[0-9]+\.[0-9]+\.[0-9]+$/);
           assert.deepEqual(require('./plugin/manifest.json'), manifest);
           assert.equal(pkg.version, manifest.version);
           assert.equal(lock.version, manifest.version);
           assert.equal(lock.packages[''].version, manifest.version);
+          console.log(manifest.version);
           NODE
-      - name: Install, test, and build
+          )
+          echo "PLUGIN_VERSION=$version" >> "$GITHUB_ENV"
+      - name: Install dependencies
         working-directory: plugin
-        run: |
-          npm ci
-          npm test
-          npm run build
-          zip obsidian-library-plugin.zip manifest.json main.js styles.css
+        run: npm ci
+      - name: Test
+        working-directory: plugin
+        run: npm test
+      - name: Build
+        working-directory: plugin
+        run: npm run build
+      - name: Package
+        working-directory: plugin
+        run: Compress-Archive -LiteralPath manifest.json,main.js,styles.css -DestinationPath obsidian-library-plugin.zip
       - name: Publish GitHub release
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes \
+          if gh release view "$PLUGIN_VERSION" >/dev/null 2>&1; then
+            echo "Release $PLUGIN_VERSION already exists."
+            exit 0
+          fi
+          gh release create "$PLUGIN_VERSION" --target "$GITHUB_SHA" --title "$PLUGIN_VERSION" --generate-notes \
             plugin/manifest.json plugin/main.js plugin/styles.css plugin/obsidian-library-plugin.zip
