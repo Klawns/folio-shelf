@@ -13,8 +13,7 @@
 	container-type: inline-size;
 }
 
-.ol-library h2,
-.ol-settings h2 {
+.ol-library h2 {
 	margin: 0;
 	font-size: var(--font-ui-larger);
 	line-height: 1.3;
@@ -85,7 +84,7 @@
 	margin-bottom: var(--size-4-3);
 }
 
-.ol-list .ol-card + .ol-card {
+.ol-card {
 	border-top: 1px solid var(--background-modifier-border);
 }
 
@@ -96,6 +95,10 @@
 	min-width: 0;
 	padding: var(--size-4-2);
 	border-radius: var(--radius-m);
+}
+
+.ol-grid .ol-card {
+	border: 1px solid var(--background-modifier-border);
 }
 
 .ol-card:hover,
@@ -131,7 +134,7 @@
 	background: var(--background-secondary);
 }
 
-.ol-card-open,
+.ol-library .ol-card > button.ol-card-open,
 .ol-book-details button.ol-note-link,
 .ol-book-details button.ol-note-create {
 	display: flex;
@@ -149,11 +152,21 @@
 	white-space: normal;
 }
 
-.ol-card-open:hover,
+.ol-library .ol-card > button.ol-card-open:hover,
 .ol-book-details :is(.ol-note-link, .ol-note-create):hover {
 	background: transparent;
 	box-shadow: none;
 	color: var(--text-accent);
+}
+
+.ol-library .ol-card > button.ol-card-open:is(:hover, :active, :focus, :disabled) {
+	background: transparent;
+	border: 0;
+	box-shadow: none;
+}
+
+.ol-library .ol-card .ol-cover {
+	box-shadow: none;
 }
 
 .ol-card-title {
@@ -189,7 +202,7 @@
 	margin-inline-start: auto;
 }
 
-.ol-list .ol-card-open {
+.ol-library .ol-list .ol-card > button.ol-card-open {
 	display: grid;
 	grid-template-columns: minmax(2rem, calc(var(--ol-cover-size, 150px) * .28)) minmax(0, 1fr);
 	align-items: center;
@@ -197,8 +210,14 @@
 
 .ol-list .ol-card {
 	display: grid;
-	grid-template-columns: minmax(0, 1fr) minmax(0, 9rem);
+	grid-template-columns: minmax(0, 1fr) minmax(8rem, 10rem);
 	align-items: center;
+	gap: var(--size-4-3);
+	border-radius: 0;
+}
+
+.ol-list .ol-card + .ol-card {
+	border-top: 1px solid var(--background-modifier-border);
 }
 
 .ol-list .ol-card-footer {
@@ -388,17 +407,6 @@
 .ol-detail-item dd {
 	margin: 0;
 	text-align: end;
-}
-
-.ol-settings-header h2 {
-	display: flex;
-	align-items: center;
-	gap: var(--size-4-2);
-	margin-bottom: var(--size-4-1);
-}
-
-.ol-settings-header .svg-icon {
-	color: var(--text-accent);
 }
 
 .ol-settings-section {

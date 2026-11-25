@@ -681,15 +681,11 @@ function chooseVaultPath(plugin: LibraryPlugin, folders: boolean, onSelect: (pat
 
 export function renderLibrarySettings(container: HTMLElement, plugin: LibraryPlugin, onSuccess?: () => void): void {
 	const settings = container.createDiv("ol-settings");
-	if (!onSuccess) {
-		const header = settings.createDiv("ol-settings-header");
-		const title = header.createEl("h2");
-		setIcon(title.createSpan(), "library");
-		title.createSpan({ text: "Obsidian Library" });
-		header.createDiv({ text: "Manage your books, reading preferences and study notes.", cls: "ol-secondary" });
-	}
-	const source = settings.createDiv("ol-settings-section");
-	new Setting(source).setName("Library source").setHeading();
+	if (!onSuccess) settings.createDiv({
+		text: "Manage your books, reading preferences and study notes.", cls: "ol-secondary",
+	});
+	const source = settings.createDiv(onSuccess ? "ol-source-settings" : "ol-settings-section");
+	if (!onSuccess) new Setting(source).setName("Library source").setHeading();
 
 	let localPath = plugin.localFolder;
 	let serverAddress = plugin.origin;
