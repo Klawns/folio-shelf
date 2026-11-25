@@ -31,9 +31,9 @@ Open the library from the ribbon or with **Open library**. Click the red or gree
 
 ### Publish an update
 
-For a new release, run `npm --prefix plugin version patch --no-git-tag-version` from the repository root. Use `minor` or `major` for larger version changes. This updates both manifests and the npm package and lockfile together.
+Push or merge plugin changes into `main`. GitHub Actions takes the greater of the source version and the latest version tag, increments its patch number in the build, runs the tests, and publishes the matching tag, release, and assets. The generated version is recorded in the release and its manifest. Check progress under **Actions → Release Obsidian plugin**.
 
-Commit the changes and push or merge them into `main`. GitHub Actions verifies the versions, runs the plugin tests, and builds the bundle. For an unpublished version, it creates the matching tag and release and uploads the individual Obsidian files and a ZIP. Pushes with an already released version keep the existing release. Check progress under **Actions → Release Obsidian plugin**.
+After publication, run the BRAT command to check for plugin updates in Obsidian, or enable automatic plugin updates in BRAT settings. Repeat on each device you configured with BRAT.
 
 Update the Raspberry Pi service using the deployment steps above when a change requires it.
 
