@@ -292,6 +292,34 @@
 	margin-top: var(--size-4-1);
 }
 
+.ol-resume:has(> .ol-resume-book:only-child) {
+	grid-auto-columns: minmax(0, 1fr);
+}
+
+@container (min-width: 36rem) {
+	.ol-resume-book:only-child {
+		grid-template-columns: 3rem minmax(0, 1fr);
+		align-items: center;
+	}
+
+	.ol-resume-book:only-child .ol-resume-info {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto;
+		align-items: center;
+		column-gap: var(--size-4-4);
+	}
+
+	.ol-resume-book:only-child .ol-resume-info > :not(button) {
+		grid-column: 1;
+	}
+
+	.ol-resume-book:only-child .ol-resume-info > button {
+		grid-column: 2;
+		grid-row: 1 / span 3;
+		margin-top: 0;
+	}
+}
+
 :is(.ol-library, .ol-book-details, .ol-settings) :is(button, input, select, summary):focus-visible {
 	outline: 2px solid var(--interactive-accent);
 	outline-offset: 2px;
