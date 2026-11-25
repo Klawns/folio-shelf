@@ -552,80 +552,245 @@
 	text-align: end;
 }
 
-.ol-settings-section {
-	margin-top: var(--size-4-4);
-	padding-top: var(--size-4-2);
-	border-top: 1px solid var(--background-modifier-border);
-}
-
-.ol-settings .setting-item-control {
-	flex-wrap: wrap;
-	min-width: 0;
-}
-
-.ol-settings .setting-item-control :is(input, button, select) {
-	max-width: 100%;
-}
-
-.ol-settings .setting-item-control button {
-	height: auto;
-	min-height: var(--input-height);
-	white-space: normal;
-}
-
-.ol-source-fields {
+.ol-settings {
 	container-type: inline-size;
 }
 
-.ol-settings .ol-source-setting {
-	align-items: flex-start;
+.ol-settings-page {
+	box-sizing: border-box;
+	width: 100%;
+	max-width: 800px;
+	margin-inline: auto;
+	padding: var(--size-4-6);
 }
 
-.ol-source-setting input[type="text"] {
-	width: 18rem;
+.is-mobile .ol-settings-page {
+	padding-inline: var(--size-4-4);
 }
 
-@container (max-width: 30rem) {
-	.ol-settings .ol-source-setting {
-		flex-direction: column;
-		gap: var(--size-4-2);
-	}
+.ol-settings-page > header h2 {
+	margin: 0 0 6px;
+	color: var(--text-normal);
+	font-size: 24px;
+	font-weight: 600;
+}
 
-	.ol-source-setting .setting-item-control,
-	.ol-source-setting input[type="text"] {
-		width: 100%;
-	}
+.ol-settings-page > header .ol-secondary {
+	font-size: 13px;
+}
+
+.ol-settings-page > .ol-settings-section {
+	margin-block-start: var(--size-4-8);
+}
+
+.ol-settings-section > h3 {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-2);
+	margin: 0 0 var(--size-4-3);
+	color: var(--text-normal);
+	font-size: 16px;
+	font-weight: 600;
+}
+
+.ol-settings-section > h3 .svg-icon {
+	display: block;
+	width: 18px;
+	height: 18px;
+	color: var(--text-muted);
+}
+
+.ol-settings-group {
+	padding: var(--size-4-1) var(--size-4-4);
+	border-radius: var(--radius-m);
+	background: var(--background-secondary);
+}
+
+.ol-settings-group .setting-item {
+	min-height: 56px;
+	margin: 0;
+	padding: var(--size-4-3) 0;
+	border: 0;
+	gap: var(--size-4-4);
+	background: transparent;
+	box-shadow: none;
+}
+
+.ol-settings-group .setting-item-info {
+	min-width: 0;
+	margin: 0;
+}
+
+.ol-settings-group .setting-item-name {
+	color: var(--text-normal);
+	font-size: 14px;
+	font-weight: 500;
+}
+
+.ol-settings-group .setting-item-description {
+	margin-top: var(--size-4-1);
+	color: var(--text-muted);
+	font-size: 13px;
+}
+
+.ol-settings-group :is(.setting-item + .setting-item, .ol-source-fields:not(:empty), .ol-settings-actions) {
+	position: relative;
+}
+
+.ol-settings-group :is(.setting-item + .setting-item, .ol-source-fields:not(:empty), .ol-settings-actions)::before {
+	content: "";
+	position: absolute;
+	inset: 0 var(--size-4-2) auto;
+	height: 1px;
+	background: color-mix(in srgb, var(--background-modifier-border) 50%, transparent);
+}
+
+.ol-settings-group .setting-item-control {
+	min-width: 0;
+	max-width: 55%;
+	gap: var(--size-4-2);
+}
+
+.ol-settings-group .setting-item-control :is(input, button, select) {
+	min-width: 0;
+	max-width: 100%;
+}
+
+.ol-settings-group .ol-source-setting input[type="text"] {
+	width: 17rem;
+}
+
+.ol-settings-group input[aria-invalid="true"] {
+	border-color: var(--text-error);
 }
 
 .ol-settings-actions {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
+	flex-wrap: wrap;
 	gap: var(--size-4-2);
-	margin-block: var(--size-4-2);
+	padding-block: var(--size-4-3);
 }
 
-.ol-settings [data-connected="true"]::before {
+.ol-source-status {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-2);
+	min-width: 0;
+}
+
+.ol-source-status::before {
 	content: "";
-	display: inline-block;
 	width: 7px;
 	height: 7px;
-	margin-inline-end: var(--size-4-1);
+	flex: none;
 	border-radius: 50%;
-	background: var(--color-green);
+	background: var(--text-faint);
+}
+
+.ol-source-status[data-state="connected"]::before { background: var(--color-green); }
+.ol-source-status[data-state="error"]::before { background: var(--text-error); }
+.ol-source-status[data-state="warning"]::before { background: var(--color-yellow); }
+.ol-source-status[data-state="busy"]::before {
+	background: transparent;
+	border: 1px solid var(--text-faint);
+	border-top-color: var(--interactive-accent);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+	.ol-source-status[data-state="busy"]::before { animation: ol-settings-spin 800ms linear infinite; }
+}
+
+@keyframes ol-settings-spin {
+	to { transform: rotate(1turn); }
 }
 
 .ol-server-guide {
-	color: var(--text-accent);
-	font-size: var(--font-ui-smaller);
+	padding-bottom: var(--size-4-2);
+	font-size: 13px;
 }
 
 .ol-server-guide summary {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	width: fit-content;
+	min-height: 32px;
 	cursor: pointer;
+	color: var(--text-accent);
+	list-style: none;
 }
 
-.ol-server-guide p {
+.ol-server-guide summary::-webkit-details-marker { display: none; }
+.ol-server-guide summary .svg-icon { display: block; width: 14px; height: 14px; }
+.ol-server-guide[open] .ol-guide-chevron-right,
+.ol-server-guide:not([open]) .ol-guide-chevron-down { display: none; }
+.ol-server-guide p { margin-block: 0 var(--size-4-2); color: var(--text-muted); }
+
+.ol-settings-group .ol-settings-icon {
+	flex: none;
 	color: var(--text-muted);
+}
+
+.ol-settings-group .ol-settings-icon[hidden] { display: none; }
+.ol-settings-group .ol-template-select {
+	display: block;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.ol-layout-segments {
+	display: inline-flex;
+	gap: 2px;
+	padding: 2px;
+	border-radius: var(--radius-m);
+	background: var(--background-primary);
+}
+
+.ol-settings-group .ol-layout-segments button {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--size-4-1);
+	min-height: 30px;
+	border: 0;
+	border-radius: var(--radius-s);
+	box-shadow: none;
+	background: transparent;
+	color: var(--text-muted);
+	font-size: 13px;
+}
+
+.ol-settings-group .ol-layout-segments button[aria-pressed="true"] {
+	background: var(--background-modifier-hover);
+	color: var(--text-accent);
+}
+
+.ol-layout-segments .svg-icon { display: block; width: 16px; height: 16px; }
+.ol-cover-size-slider { width: 130px; }
+.ol-cover-size-value {
+	flex: none;
+	min-width: 5ch;
+	color: var(--text-muted);
+	font-variant-numeric: tabular-nums;
+}
+
+@container (max-width: 30rem) {
+	.ol-settings-group .setting-item {
+		flex-direction: column;
+		align-items: stretch;
+		gap: var(--size-4-2);
+	}
+
+	.ol-settings-group .setting-item-control {
+		justify-content: flex-start;
+		max-width: 100%;
+	}
+
+	.ol-settings-group .setting-item-control input[type="text"] {
+		width: 100%;
+	}
 }
 
 @container (max-width: 380px) {

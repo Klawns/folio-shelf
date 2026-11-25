@@ -120,7 +120,8 @@ it("shows the active source fields and loads a desktop folder from the settings"
 		localFolder: "",
 		origin: "https://books.example.test",
 		books: [{}],
-		useLocalFolder: vi.fn(function (this: LibraryPlugin) {
+		useLocalFolder: vi.fn(function (this: LibraryPlugin, path: string) {
+			this.localFolder = path;
 			this.connected = true;
 		}),
 	} as unknown as LibraryPlugin;
@@ -135,7 +136,10 @@ it("shows the active source fields and loads a desktop folder from the settings"
 		find(text: string): Element | undefined;
 	};
 	const content = view.contentEl as unknown as Element;
-	expect(content.find("Server address")).toBeDefined();
+	const [address] = content.find("Server address")!.children;
+	address.value = "http://books.example.test";
+	address.listeners.get("input")!();
+	expect(content.find("Enter a valid HTTPS server address.")).toBeDefined();
 	const [selector] = content.find("Storage location")!.children;
 	selector.value = "local";
 	selector.listeners.get("change")!();
@@ -144,7 +148,7 @@ it("shows the active source fields and loads a desktop folder from the settings"
 	input.value = "D:\\Books";
 	await content.find("Load books")!.listeners.get("click")!();
 	expect(plugin.useLocalFolder).toHaveBeenCalledWith("D:\\Books");
-	expect(content.find("Connected / 1 book")).toBeDefined();
+	expect(content.find("Connected \u00b7 1 book")).toBeDefined();
 	expect(close).toHaveBeenCalledOnce();
 });
 

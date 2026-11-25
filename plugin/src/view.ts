@@ -1,6 +1,6 @@
 import { ItemView, Menu, Modal, Platform, Setting, SuggestModal, WorkspaceLeaf, setIcon, setTooltip } from "obsidian";
 import type LibraryPlugin from "./main";
-import { Book, Progress, hasConflict, progressHeads, studyFolder } from "./model";
+import { Book, Progress, endpoint, hasConflict, progressHeads, studyFolder } from "./model";
 import type { Personal } from "./storage";
 
 export const VIEW = "obsidian-library";
@@ -127,7 +127,7 @@ export class LibraryView extends ItemView {
 			const rect = button.getBoundingClientRect();
 			button.setAttribute("aria-expanded", "true");
 			menu.onHide(() => button.setAttribute("aria-expanded", "false"));
-			menu.showAtPosition({ x: rect.left, y: rect.bottom }, button.ownerDocument);
+			menu.showAtPosition({ x: rect.left, y: rect.bottom + 4, width: rect.width, overlap: true, left: name === "Sort by" }, button.ownerDocument);
 		});
 		button.addClass("ol-filter-button");
 		button.setAttribute("aria-haspopup", "menu");
@@ -743,13 +743,24 @@ function chooseVaultPath(plugin: LibraryPlugin, folders: boolean, onSelect: (pat
 	picker.open();
 }
 
+function settingsGroup(parent: HTMLElement, title?: string, icon?: string): HTMLElement {
+	const section = parent.createEl("section", { cls: "ol-settings-section" });
+	if (title && icon) {
+		const heading = section.createEl("h3");
+		setIcon(heading.createSpan({ attr: { "aria-hidden": "true" } }), icon);
+		heading.createSpan({ text: title });
+	}
+	return section.createDiv("ol-settings-group");
+}
+
 export function renderLibrarySettings(container: HTMLElement, plugin: LibraryPlugin, onSuccess?: () => void): void {
-	const settings = container.createDiv("ol-settings");
-	if (!onSuccess) settings.createDiv({
-		text: "Manage your books, reading preferences and study notes.", cls: "ol-secondary",
-	});
-	const source = settings.createDiv(onSuccess ? "ol-source-settings" : "ol-settings-section");
-	if (!onSuccess) new Setting(source).setName("Library source").setHeading();
+	const settings = container.createDiv(onSuccess ? "ol-settings ol-settings-quick" : "ol-settings ol-settings-page");
+	if (!onSuccess) {
+		const header = settings.createEl("header");
+		header.createEl("h2", { text: "Obsidian Library" });
+		header.createDiv({ text: "Manage your books, reading preferences and study notes.", cls: "ol-secondary" });
+	}
+	const source = settingsGroup(settings, onSuccess ? undefined : "Library source", "server");
 
 	let localPath = plugin.localFolder;
 	let serverAddress = plugin.origin;
@@ -761,6 +772,7 @@ export function renderLibrarySettings(container: HTMLElement, plugin: LibraryPlu
 		if (!Platform.isMobile) selector.addOption("local", "Local folder");
 		selector.addOption("server", "Remote server").setValue(sourceType);
 		selector.selectEl.options[0].disabled = true;
+		selector.selectEl.setAttribute("aria-label", "Storage location");
 		const renderSource = () => {
 			fields.empty();
 			if (!sourceType) return;
@@ -771,36 +783,61 @@ export function renderLibrarySettings(container: HTMLElement, plugin: LibraryPlu
 			row.addText(input => {
 				input.setPlaceholder(local ? "C:/Books" : "https://server.example:9443")
 					.setValue(local ? localPath : serverAddress);
+				input.inputEl.type = "text";
 				if (!local) input.inputEl.inputMode = "url";
 				input.inputEl.spellcheck = false;
 				input.inputEl.setAttribute("aria-label", local ? "PDF folder" : "Server address");
+				const actions = fields.createDiv("ol-settings-actions");
+				const status = actions.createDiv({ cls: "ol-source-status", attr: { role: "status" } });
+				const setState = (state: string, message: string) => {
+					status.dataset.state = state;
+					status.setText(message);
+				};
+				const show = () => {
+					input.inputEl.setAttribute("aria-invalid", "false");
+					const value = input.getValue();
+					let active = local && Boolean(plugin.localFolder) && value === plugin.localFolder;
+					if (!local && value.trim()) {
+						try {
+							active = !plugin.localFolder && endpoint(value) === plugin.origin;
+						} catch {
+							input.inputEl.setAttribute("aria-invalid", "true");
+							setState("error", "Enter a valid HTTPS server address.");
+							return;
+						}
+					}
+					if (!active) return setState("idle", local ? "Folder not scanned" : "Connection not tested");
+					const count = plugin.books.length;
+					if (plugin.error) return setState(plugin.connected ? "warning" : "error", plugin.error);
+					if (plugin.connected) return setState("connected", "Connected \u00b7 " + count + (count === 1 ? " book" : " books"));
+					setState("error", "Unavailable");
+				};
 				input.onChange(value => {
 					if (local) localPath = value;
 					else serverAddress = value;
+					show();
 				});
-				const actions = fields.createDiv("ol-settings-actions");
-				const active = local ? Boolean(plugin.localFolder) : Boolean(plugin.origin && !plugin.localFolder);
-				const status = actions.createDiv({ attr: { role: "status" } });
-				const show = () => {
-					const count = plugin.books.length;
-					status.setText(plugin.error || (plugin.connected ? "Connected / " + count + (count === 1 ? " book" : " books") : "Unavailable"));
-					status.dataset.connected = String(plugin.connected && !plugin.error);
-				};
-				if (active) show();
+				show();
 				const action = actions.createEl("button", { text: local ? "Load books" : "Test connection" });
 				action.addEventListener("click", async () => {
 					action.disabled = true;
 					selector.setDisabled(true);
 					input.setDisabled(true);
-					status.dataset.connected = "false";
-					status.setText(local ? "Scanning folder..." : "Testing connection...");
+					setState("busy", local ? "Scanning folder..." : "Testing connection...");
 					try {
-						if (local) await plugin.useLocalFolder(input.getValue());
-						else await plugin.connect(input.getValue());
+						if (local) {
+							await plugin.useLocalFolder(input.getValue());
+							localPath = plugin.localFolder;
+							input.setValue(localPath);
+						} else {
+							await plugin.connect(input.getValue());
+							serverAddress = plugin.origin;
+							input.setValue(serverAddress);
+						}
 						show();
 						if (!plugin.error) onSuccess?.();
 					} catch (error) {
-						status.setText(error instanceof Error ? error.message : "Could not set up the library source.");
+						setState("error", error instanceof Error ? error.message : "Could not set up the library source.");
 					} finally {
 						action.disabled = false;
 						selector.setDisabled(false);
@@ -810,7 +847,11 @@ export function renderLibrarySettings(container: HTMLElement, plugin: LibraryPlu
 			});
 			if (!local) {
 				const guide = fields.createEl("details", { cls: "ol-server-guide" });
-				guide.createEl("summary", { text: "Server setup guide" });
+				const summary = guide.createEl("summary");
+				for (const icon of ["chevron-right", "chevron-down"]) {
+					setIcon(summary.createSpan({ cls: "ol-guide-" + icon, attr: { "aria-hidden": "true" } }), icon);
+				}
+				summary.createSpan({ text: "Server setup guide" });
 				guide.createEl("p", { text: "Run the Obsidian Library server on a computer that can read your PDF folder. Make the service available over HTTPS and enter its base address here." });
 			}
 		};
@@ -819,8 +860,8 @@ export function renderLibrarySettings(container: HTMLElement, plugin: LibraryPlu
 	});
 	if (onSuccess) return;
 
-	const notes = settings.createDiv("ol-settings-section");
-	const appearance = settings.createDiv("ol-settings-section");
+	const notes = settingsGroup(settings, "Study notes", "notebook-pen");
+	const appearance = settingsGroup(settings, "Appearance", "palette");
 	const feedback = settings.createDiv({ cls: "ol-secondary", attr: { role: "status" } });
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	const save = () => {
@@ -830,7 +871,6 @@ export function renderLibrarySettings(container: HTMLElement, plugin: LibraryPlu
 				error instanceof Error ? error.message : "Could not save preferences."));
 		}, 300);
 	};
-	new Setting(notes).setName("Study notes").setHeading();
 	new Setting(notes).setName("Notes folder").setDesc("Location for new study notes.")
 		.addText(input => {
 			input.setValue(plugin.studyRoot).onChange(value => {
@@ -843,10 +883,11 @@ export function renderLibrarySettings(container: HTMLElement, plugin: LibraryPlu
 				}
 			});
 			input.inputEl.setAttribute("aria-label", "Notes folder");
-			const browse = input.inputEl.parentElement?.createEl("button", { attr: { "aria-label": "Browse vault folders" } });
+			const browse = input.inputEl.parentElement?.createEl("button", { attr: { "aria-label": "Select notes folder" } });
 			if (!browse) return;
+			browse.addClass("ol-settings-icon");
 			setIcon(browse, "folder");
-			setTooltip(browse, "Browse vault folders");
+			setTooltip(browse, "Select notes folder");
 			browse.addEventListener("click", () => chooseVaultPath(plugin, true, path => {
 				input.setValue(path);
 				plugin.studyRoot = path;
@@ -855,42 +896,67 @@ export function renderLibrarySettings(container: HTMLElement, plugin: LibraryPlu
 		});
 	new Setting(notes).setName("Note template").setDesc("Optional Markdown template.")
 		.addButton(select => {
-			const update = () => select.setButtonText(plugin.studyTemplate || "Select a template");
+			select.buttonEl.addClass("ol-template-select");
+			const clear = select.buttonEl.parentElement?.createEl("button", {
+				cls: "ol-settings-icon", attr: { "aria-label": "Clear note template" },
+			});
+			if (clear) {
+				setIcon(clear, "x");
+				setTooltip(clear, "Clear note template");
+				clear.addEventListener("click", () => {
+					plugin.studyTemplate = "";
+					update();
+					select.buttonEl.focus();
+					save();
+				});
+			}
+			const update = () => {
+				select.setButtonText(plugin.studyTemplate || "Select a template");
+				select.buttonEl.title = plugin.studyTemplate;
+				if (clear) clear.hidden = !plugin.studyTemplate;
+			};
 			update();
 			select.onClick(() => chooseVaultPath(plugin, false, path => {
 				plugin.studyTemplate = path;
 				update();
 				save();
 			}));
-			select.buttonEl.parentElement?.createEl("button", { text: "Clear", attr: { "aria-label": "Clear note template" } })
-				.addEventListener("click", () => {
-					plugin.studyTemplate = "";
-					update();
-					save();
-				});
 		});
-	new Setting(appearance).setName("Appearance").setHeading();
 	const changeAppearance = () => { plugin.redraw(); save(); };
 	const layout = new Setting(appearance).setName("Default view").setDesc("How books are displayed.");
+	const segments = layout.controlEl.createDiv({ cls: "ol-layout-segments", attr: { role: "group", "aria-label": "Default view" } });
 	const choices = new Map<string, HTMLButtonElement>();
 	const sync = () => {
 		for (const [value, button] of choices) button.setAttribute("aria-pressed", String(value === plugin.appearance.layout));
 	};
-	for (const [value, label] of [["grid", "Grid"], ["list", "List"]] as const) {
-		layout.addButton(button => {
-			choices.set(value, button.buttonEl);
-			button.setButtonText(label).onClick(() => {
-				plugin.appearance.layout = value;
-				sync();
-				changeAppearance();
-			});
+	for (const [value, label, icon] of [["grid", "Grid", "layout-grid"], ["list", "List", "list"]] as const) {
+		const button = segments.createEl("button");
+		setIcon(button.createSpan({ attr: { "aria-hidden": "true" } }), icon);
+		button.createSpan({ text: label });
+		choices.set(value, button);
+		button.addEventListener("click", () => {
+			plugin.appearance.layout = value;
+			sync();
+			changeAppearance();
 		});
 	}
 	sync();
-	new Setting(appearance).setName("Cover size").setDesc("Adjust the size of book covers.")
-		.addSlider(slider => slider.setLimits(110, 220, 5).setValue(plugin.appearance.coverSize).setDynamicTooltip()
-			.onChange(value => { plugin.appearance.coverSize = value; changeAppearance(); }));
+	const coverSize = new Setting(appearance).setName("Cover size").setDesc("Adjust the size of book covers.");
+	const sizeLabel = coverSize.controlEl.createSpan({ cls: "ol-cover-size-value", text: plugin.appearance.coverSize + "px" });
+	coverSize.addSlider(slider => {
+		slider.sliderEl.setAttribute("aria-label", "Cover size");
+		slider.sliderEl.addClass("ol-cover-size-slider");
+		slider.setLimits(110, 220, 5).setValue(plugin.appearance.coverSize).setDynamicTooltip()
+			.onChange(value => {
+				plugin.appearance.coverSize = value;
+				sizeLabel.setText(value + "px");
+				changeAppearance();
+			});
+	});
 	new Setting(appearance).setName("Show reading progress").setDesc("Display progress below book covers.")
-		.addToggle(toggle => toggle.setValue(plugin.appearance.showProgress)
-			.onChange(value => { plugin.appearance.showProgress = value; changeAppearance(); }));
+		.addToggle(toggle => {
+			toggle.toggleEl.setAttribute("aria-label", "Show reading progress");
+			toggle.setValue(plugin.appearance.showProgress)
+				.onChange(value => { plugin.appearance.showProgress = value; changeAppearance(); });
+		});
 }
