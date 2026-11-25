@@ -186,16 +186,16 @@
 	box-shadow: none;
 }
 
-.ol-library .ol-grid .ol-cover-loaded {
+.ol-library :is(.ol-grid, .ol-resume) .ol-cover-loaded {
 	aspect-ratio: auto;
 	background: transparent;
 }
 
-.ol-library .ol-grid .ol-cover-loaded > :not(img) {
+.ol-library :is(.ol-grid, .ol-resume) .ol-cover-loaded > :not(img) {
 	display: none;
 }
 
-.ol-library .ol-grid .ol-cover-loaded img {
+.ol-library :is(.ol-grid, .ol-resume) .ol-cover-loaded img {
 	position: static;
 	height: auto;
 	border-radius: inherit;
@@ -312,7 +312,7 @@
 
 .ol-library .ol-resume > button.ol-resume-book {
 	display: grid;
-	grid-template-columns: min(30%, 5rem) minmax(0, 1fr) auto;
+	grid-template-columns: min(34%, 5.5rem) minmax(0, 1fr) auto;
 	align-items: center;
 	gap: var(--size-4-3);
 	width: 100%;
