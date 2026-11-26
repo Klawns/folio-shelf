@@ -1,10 +1,6 @@
-export const ROOT = "Biblioteca";
-export const STATE = ROOT + "/_state";
-export const SNAPSHOT = STATE + "/catalogo.md";
-export const PROGRESS = STATE + "/progresso/";
-export const PERSONAL = STATE + "/livros/";
-export const DELETED = STATE + "/deleted/";
-export const NOTES = ROOT + "/Notas/";
+export const ROOT = "Library";
+export const LEGACY_ROOT = "Biblioteca";
+
 export const idPattern = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/;
 
 export interface Book {
@@ -87,8 +83,8 @@ export function hasConflict(heads: Progress[]): boolean {
 	return new Set(heads.map(entry => entry.page + "/" + entry.completed)).size > 1;
 }
 
-export function referencePath(id: string): string {
-	return ROOT + "/_refs/" + id + ".pdf";
+export function referencePath(id: string, root = ROOT): string {
+	return root + "/_refs/" + id + ".pdf";
 }
 
 export function slug(title: string): string {
@@ -96,13 +92,18 @@ export function slug(title: string): string {
 		.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 72) || "book";
 }
 
-export function studyFolder(input: string): string {
+export function studyFolder(input: string, dataRoot = ROOT): string {
 	const path = input.trim().replace(/\\/g, "/");
+	const normalized = path.toLowerCase();
 	if (!path || path.split("/").some(segment => !segment || segment.startsWith(".")
 		|| /[<>:"|?*#[\]\x00-\x1f]/.test(segment) || /[. ]$/.test(segment)
 		|| /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(segment))
-		|| path.toLowerCase().startsWith((STATE + "/").toLowerCase()) || path.toLowerCase() === STATE.toLowerCase()
-		|| path.toLowerCase() === "biblioteca/_refs" || path.toLowerCase().startsWith("biblioteca/_refs/")) {
+		|| [ROOT, LEGACY_ROOT, dataRoot].some(root => {
+			return ["_state", "_refs"].some(folder => {
+				const reserved = root.toLowerCase() + "/" + folder;
+				return normalized === reserved || normalized.startsWith(reserved + "/");
+			});
+		})) {
 		throw new Error("Enter a valid vault-relative folder.");
 	}
 	return path;

@@ -161,6 +161,7 @@ it("renders the library when Obsidian opens the workspace view", async () => {
 it.each(["modal", "settings"] as const)("loads a desktop folder from the %s source menu", async surface => {
 	const plugin = {
 		localFolder: "",
+		storage: { root: "Library" },
 		origin: "https://books.example.test",
 		books: [{}],
 		appearance: { layout: "grid", coverSize: 150 },

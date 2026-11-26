@@ -15,6 +15,7 @@ it("accepts study folders within the vault and sanitizes generated file names", 
 	expect(() => studyFolder("../Redes")).toThrow();
 	expect(() => studyFolder("C:\\Redes")).toThrow();
 	expect(() => studyFolder(".obsidian/plugins")).toThrow();
+	expect(() => studyFolder("Library/_state")).toThrow();
 	expect(() => studyFolder("Biblioteca/_state")).toThrow();
 	expect(bookFileName("Protocolos: TCP/IP")).toBe("Protocolos  TCP IP");
 	expect(bookFileName("CON")).toBe("Book con");
@@ -53,7 +54,7 @@ describe("catálogo e referências", () => {
 		expect(validBooks([{ ...book, readUrl: book.readUrl + "?secret=x" }], origin)).toBe(false);
 		expect(validBooks([{ ...book, id: "../example" }], origin)).toBe(false);
 		expect(validBooks([{ ...book, readUrl: "https://elsewhere.test/book.pdf" }], origin)).toBe(false);
-		expect(referencePath(bookId)).toBe("Biblioteca/_refs/" + bookId + ".pdf");
+		expect(referencePath(bookId)).toBe("Library/_refs/" + bookId + ".pdf");
 	});
 	it("valida a origem HTTPS", () => {
 		expect(endpoint(origin + "/")).toBe(origin);

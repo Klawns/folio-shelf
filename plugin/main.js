@@ -24,7 +24,164 @@ __export(main_exports, {
   default: () => LibraryPlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian4 = require("obsidian");
+var import_obsidian5 = require("obsidian");
+
+// local-typescript:C:\Users\Fabricio\Documents\PluginLivrosObsidian\plugin\src\migration.ts
+var import_obsidian = require("obsidian");
+
+// local-typescript:C:\Users\Fabricio\Documents\PluginLivrosObsidian\plugin\src\model.ts
+var ROOT = "Library";
+var LEGACY_ROOT = "Biblioteca";
+var idPattern = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/;
+function endpoint(value) {
+  const url = new URL(value.trim());
+  if (url.protocol !== "https:" || url.username || url.password || url.pathname !== "/" || url.href !== url.origin + "/") {
+    throw new Error("Enter a private HTTPS origin without a path or credentials.");
+  }
+  return url.origin;
+}
+function validateBook(value, origin) {
+  if (!value || typeof value !== "object") return false;
+  const entry = value;
+  return typeof entry.id === "string" && idPattern.test(entry.id) && entry.source === void 0 && typeof entry.title === "string" && typeof entry.category === "string" && (entry.author === void 0 || typeof entry.author === "string") && (entry.coverUrl === void 0 || entry.coverUrl === origin + "/api/v1/books/" + entry.id + "/cover") && (entry.pageCount === void 0 || Number.isSafeInteger(entry.pageCount) && entry.pageCount > 0) && Number.isSafeInteger(entry.sizeBytes) && entry.sizeBytes >= 0 && typeof entry.etag === "string" && typeof entry.lastModified === "string" && entry.format === "pdf" && (entry.availability === "available" || entry.availability === "missing") && entry.readUrl === origin + "/api/v1/books/" + entry.id + "/file" && new TextEncoder().encode(entry.readUrl).length <= 300;
+}
+function validBooks(value, origin) {
+  return Array.isArray(value) && value.every((book) => validateBook(book, origin)) && new Set(value.map((book) => book.id)).size === value.length;
+}
+function validProgress(value) {
+  if (!value || typeof value !== "object") return false;
+  const entry = value;
+  return typeof entry.id === "string" && idPattern.test(entry.id) && typeof entry.bookId === "string" && idPattern.test(entry.bookId) && typeof entry.deviceId === "string" && idPattern.test(entry.deviceId) && typeof entry.updatedAt === "string" && Number.isFinite(Date.parse(entry.updatedAt)) && typeof entry.completed === "boolean" && Number.isSafeInteger(entry.page) && entry.page > 0 && Array.isArray(entry.parents) && entry.parents.every((parent) => typeof parent === "string" && idPattern.test(parent) && parent !== entry.id);
+}
+function progressHeads(entries2) {
+  const superseded = new Set(entries2.flatMap((entry) => entry.parents));
+  return [...new Map(entries2.map((entry) => [entry.id, entry])).values()].filter((entry) => !superseded.has(entry.id)).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id));
+}
+function hasConflict(heads) {
+  return new Set(heads.map((entry) => entry.page + "/" + entry.completed)).size > 1;
+}
+function referencePath(id, root = ROOT) {
+  return root + "/_refs/" + id + ".pdf";
+}
+function slug(title) {
+  return title.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 72) || "book";
+}
+function studyFolder(input, dataRoot = ROOT) {
+  const path = input.trim().replace(/\\/g, "/");
+  const normalized = path.toLowerCase();
+  if (!path || path.split("/").some((segment) => !segment || segment.startsWith(".") || /[<>:"|?*#[\]\x00-\x1f]/.test(segment) || /[. ]$/.test(segment) || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(segment)) || [ROOT, LEGACY_ROOT, dataRoot].some((root) => {
+    return ["_state", "_refs"].some((folder) => {
+      const reserved = root.toLowerCase() + "/" + folder;
+      return normalized === reserved || normalized.startsWith(reserved + "/");
+    });
+  })) {
+    throw new Error("Enter a valid vault-relative folder.");
+  }
+  return path;
+}
+function bookFileName(title) {
+  const name = title.replace(/[<>:"/\\|?*#[\]\x00-\x1f]/g, " ").trim().slice(0, 90).replace(/^[. ]+|[. ]+$/g, "");
+  return !name || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(name) ? "Book " + slug(title) : name;
+}
+
+// local-typescript:C:\Users\Fabricio\Documents\PluginLivrosObsidian\plugin\src\migration.ts
+var migrationKey = "obsidian-library-data-migration";
+var folders = ["_state", "_refs"];
+function pendingMigration(app) {
+  return app.loadLocalStorage(migrationKey) ?? void 0;
+}
+function conflict(path) {
+  return new Error("Resolve the library data conflict at " + path + " and try Apply again.");
+}
+function entries(folder, root = folder.path) {
+  return folder.children.flatMap((child) => [
+    child.path.slice(root.length + 1) + (child instanceof import_obsidian.TFolder ? "/" : ""),
+    ...child instanceof import_obsidian.TFolder ? entries(child, root) : []
+  ]).sort();
+}
+async function planMigration(storage, app, input) {
+  const to = studyFolder(input, storage.root);
+  if (to === storage.root) return;
+  if (to.toLowerCase() === storage.root.toLowerCase()) throw conflict(to);
+  const moves = {};
+  for (const name of folders) {
+    const destination = to + "/" + name;
+    if (await app.vault.adapter.exists(destination, false)) throw conflict(destination);
+    const source = storage.root + "/" + name;
+    const file = app.vault.getAbstractFileByPath(source);
+    if (!(file instanceof import_obsidian.TFolder) && (file || await app.vault.adapter.exists(source, false))) throw conflict(source);
+    moves[name] = file instanceof import_obsidian.TFolder ? { phase: "pending", entries: entries(file) } : { phase: "absent", entries: [] };
+  }
+  for (let path = to; path; path = path.slice(0, Math.max(0, path.lastIndexOf("/")))) {
+    if (!(app.vault.getAbstractFileByPath(path) instanceof import_obsidian.TFolder) && await app.vault.adapter.exists(path, false)) {
+      throw conflict(path);
+    }
+  }
+  return { from: storage.root, to, legacy: storage.legacy, moves };
+}
+function saveMigration(app, move) {
+  app.saveLocalStorage(migrationKey, move);
+}
+async function moveLibraryData(app, storage, migration) {
+  const { from, to, moves } = migration;
+  for (const name of folders) {
+    const source = from + "/" + name;
+    const destination = to + "/" + name;
+    const step = moves[name];
+    const old = app.vault.getAbstractFileByPath(source);
+    const targetExists = await app.vault.adapter.exists(destination, false);
+    if (step.phase === "absent") {
+      if (old || await app.vault.adapter.exists(source, false)) throw conflict(source);
+      if (targetExists) throw conflict(destination);
+      continue;
+    }
+    if (step.phase !== "done" && old instanceof import_obsidian.TFolder) {
+      if (targetExists) throw conflict(destination);
+      if (step.phase === "pending") step.entries = entries(old);
+      step.phase = "moving";
+      saveMigration(app, migration);
+      try {
+        await storage.ensureFolder(to);
+        if (await app.vault.adapter.exists(destination, false)) throw conflict(destination);
+        await app.fileManager.renameFile(old, destination);
+      } catch (error) {
+        throw new Error("Could not move " + source + " to " + destination + ". " + (error instanceof Error ? error.message : ""));
+      }
+    } else if (old || await app.vault.adapter.exists(source, false) || step.phase === "pending") {
+      throw conflict(source);
+    }
+    const target = app.vault.getAbstractFileByPath(destination);
+    if (!(target instanceof import_obsidian.TFolder) || JSON.stringify(entries(target)) !== JSON.stringify(step.entries)) {
+      throw conflict(destination);
+    }
+    step.phase = "done";
+    saveMigration(app, migration);
+  }
+  await updateReferences(app, from, to);
+}
+async function updateReferences(app, from, to) {
+  const prefix = from + "/_refs/";
+  const newPrefix = to + "/_refs/";
+  for (const file of app.vault.getMarkdownFiles()) {
+    if (file.path.startsWith(to + "/_state/")) continue;
+    const original = await app.vault.read(file);
+    if (!original.includes(prefix)) continue;
+    const rewrite = (content) => content.replace(
+      /\[\[([^\]\n#|]+\.pdf)(?=[#|\]])/g,
+      (link, path) => path.startsWith(prefix) && idPattern.test(path.slice(prefix.length, -4)) ? "[[" + newPrefix + path.slice(prefix.length) : link
+    );
+    const header = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(original);
+    if (header?.[1].includes(prefix) && /^refPath\s*:/m.test(header[1])) {
+      const ref = (0, import_obsidian.parseYaml)(header[1])?.refPath;
+      if (typeof ref === "string" && ref.startsWith(prefix) && ref.endsWith(".pdf") && idPattern.test(ref.slice(prefix.length, -4))) {
+        await app.fileManager.processFrontMatter(file, (data) => {
+          if (data.refPath === ref) data.refPath = newPrefix + ref.slice(prefix.length);
+        });
+      }
+    }
+    if (rewrite(original) !== original) await app.vault.process(file, rewrite);
+  }
+}
 
 // local-typescript:C:\Users\Fabricio\Documents\PluginLivrosObsidian\plugin\src\local.ts
 async function scanLocalFolder(input, deviceId) {
@@ -40,8 +197,8 @@ async function scanLocalFolder(input, deviceId) {
     const pending = [{ directory: folder, categories: [] }];
     while (pending.length) {
       const { directory, categories } = pending.pop();
-      const entries = await fs.readdir(directory, { withFileTypes: true });
-      for (const entry of entries) {
+      const entries2 = await fs.readdir(directory, { withFileTypes: true });
+      for (const entry of entries2) {
         const absolute = path.join(directory, entry.name);
         if (entry.isDirectory()) {
           pending.push({ directory: absolute, categories: [...categories, entry.name] });
@@ -83,64 +240,10 @@ async function checkLocalPDF(url) {
   throw new Error("Could not find this PDF. Check the folder and refresh the library.");
 }
 
-// local-typescript:C:\Users\Fabricio\Documents\PluginLivrosObsidian\plugin\src\model.ts
-var ROOT = "Biblioteca";
-var STATE = ROOT + "/_state";
-var SNAPSHOT = STATE + "/catalogo.md";
-var PROGRESS = STATE + "/progresso/";
-var PERSONAL = STATE + "/livros/";
-var DELETED = STATE + "/deleted/";
-var NOTES = ROOT + "/Notas/";
-var idPattern = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/;
-function endpoint(value) {
-  const url = new URL(value.trim());
-  if (url.protocol !== "https:" || url.username || url.password || url.pathname !== "/" || url.href !== url.origin + "/") {
-    throw new Error("Enter a private HTTPS origin without a path or credentials.");
-  }
-  return url.origin;
-}
-function validateBook(value, origin) {
-  if (!value || typeof value !== "object") return false;
-  const entry = value;
-  return typeof entry.id === "string" && idPattern.test(entry.id) && entry.source === void 0 && typeof entry.title === "string" && typeof entry.category === "string" && (entry.author === void 0 || typeof entry.author === "string") && (entry.coverUrl === void 0 || entry.coverUrl === origin + "/api/v1/books/" + entry.id + "/cover") && (entry.pageCount === void 0 || Number.isSafeInteger(entry.pageCount) && entry.pageCount > 0) && Number.isSafeInteger(entry.sizeBytes) && entry.sizeBytes >= 0 && typeof entry.etag === "string" && typeof entry.lastModified === "string" && entry.format === "pdf" && (entry.availability === "available" || entry.availability === "missing") && entry.readUrl === origin + "/api/v1/books/" + entry.id + "/file" && new TextEncoder().encode(entry.readUrl).length <= 300;
-}
-function validBooks(value, origin) {
-  return Array.isArray(value) && value.every((book) => validateBook(book, origin)) && new Set(value.map((book) => book.id)).size === value.length;
-}
-function validProgress(value) {
-  if (!value || typeof value !== "object") return false;
-  const entry = value;
-  return typeof entry.id === "string" && idPattern.test(entry.id) && typeof entry.bookId === "string" && idPattern.test(entry.bookId) && typeof entry.deviceId === "string" && idPattern.test(entry.deviceId) && typeof entry.updatedAt === "string" && Number.isFinite(Date.parse(entry.updatedAt)) && typeof entry.completed === "boolean" && Number.isSafeInteger(entry.page) && entry.page > 0 && Array.isArray(entry.parents) && entry.parents.every((parent) => typeof parent === "string" && idPattern.test(parent) && parent !== entry.id);
-}
-function progressHeads(entries) {
-  const superseded = new Set(entries.flatMap((entry) => entry.parents));
-  return [...new Map(entries.map((entry) => [entry.id, entry])).values()].filter((entry) => !superseded.has(entry.id)).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id));
-}
-function hasConflict(heads) {
-  return new Set(heads.map((entry) => entry.page + "/" + entry.completed)).size > 1;
-}
-function referencePath(id) {
-  return ROOT + "/_refs/" + id + ".pdf";
-}
-function slug(title) {
-  return title.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 72) || "book";
-}
-function studyFolder(input) {
-  const path = input.trim().replace(/\\/g, "/");
-  if (!path || path.split("/").some((segment) => !segment || segment.startsWith(".") || /[<>:"|?*#[\]\x00-\x1f]/.test(segment) || /[. ]$/.test(segment) || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(segment)) || path.toLowerCase().startsWith((STATE + "/").toLowerCase()) || path.toLowerCase() === STATE.toLowerCase() || path.toLowerCase() === "biblioteca/_refs" || path.toLowerCase().startsWith("biblioteca/_refs/")) {
-    throw new Error("Enter a valid vault-relative folder.");
-  }
-  return path;
-}
-function bookFileName(title) {
-  const name = title.replace(/[<>:"/\\|?*#[\]\x00-\x1f]/g, " ").trim().slice(0, 90).replace(/^[. ]+|[. ]+$/g, "");
-  return !name || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(name) ? "Book " + slug(title) : name;
-}
-
 // local-typescript:C:\Users\Fabricio\Documents\PluginLivrosObsidian\plugin\src\remote.ts
-var import_obsidian = require("obsidian");
+var import_obsidian2 = require("obsidian");
 async function checkServer(origin) {
-  const response = await (0, import_obsidian.requestUrl)({ url: origin + "/health", throw: false });
+  const response = await (0, import_obsidian2.requestUrl)({ url: origin + "/health", throw: false });
   if (response.status !== 200 || typeof response.json?.version !== "string") {
     throw new Error("Unexpected server response (HTTP " + response.status + ").");
   }
@@ -157,7 +260,7 @@ async function fetchCatalog(origin) {
     let version;
     let cursor = "";
     do {
-      const response = await (0, import_obsidian.requestUrl)({
+      const response = await (0, import_obsidian2.requestUrl)({
         url: origin + "/api/v1/books" + (cursor ? "?cursor=" + encodeURIComponent(cursor) : ""),
         throw: false
       });
@@ -177,7 +280,7 @@ async function fetchCatalog(origin) {
   throw new Error("Could not fetch a consistent catalog version.");
 }
 async function checkPDF(url) {
-  const response = await (0, import_obsidian.requestUrl)({ url, method: "HEAD", throw: false });
+  const response = await (0, import_obsidian2.requestUrl)({ url, method: "HEAD", throw: false });
   if (response.status === 404) throw new Error("Book not found on the server.");
   if (response.status === 415) throw new Error("The file is incompatible with the PDF reader.");
   if (response.status === 401 || response.status === 403) throw new Error("PDF access is unavailable on this network.");
@@ -188,69 +291,110 @@ async function checkPDF(url) {
 }
 
 // local-typescript:C:\Users\Fabricio\Documents\PluginLivrosObsidian\plugin\src\storage.ts
-var import_obsidian2 = require("obsidian");
+var import_obsidian3 = require("obsidian");
 var LibraryStorage = class {
-  constructor(app) {
+  constructor(app, root, legacyLayout) {
     this.app = app;
     __publicField(this, "pendingNotes", /* @__PURE__ */ new Map());
     __publicField(this, "pendingRefs", /* @__PURE__ */ new Map());
+    __publicField(this, "statePath");
+    __publicField(this, "snapshotPath");
+    __publicField(this, "personalPath");
+    __publicField(this, "notesPath");
+    __publicField(this, "root");
+    __publicField(this, "legacy");
+    __publicField(this, "paused", false);
+    __publicField(this, "writes", /* @__PURE__ */ new Set());
+    __publicField(this, "progressPath");
+    __publicField(this, "deletedPath");
+    const legacy = legacyLayout ?? (root ? root === LEGACY_ROOT : ["_state", "_refs", "Notas"].some((folder) => app.vault.getAbstractFileByPath(LEGACY_ROOT + "/" + folder) instanceof import_obsidian3.TFolder));
+    this.legacy = legacy;
+    this.root = root ?? (legacy ? LEGACY_ROOT : ROOT);
+    this.statePath = this.root + "/_state";
+    this.snapshotPath = this.statePath + (legacy ? "/catalogo.md" : "/catalog.md");
+    this.personalPath = this.statePath + (legacy ? "/livros/" : "/books/");
+    this.progressPath = this.statePath + (legacy ? "/progresso/" : "/progress/");
+    this.deletedPath = this.statePath + "/deleted/";
+    this.notesPath = legacy ? LEGACY_ROOT + "/Notas/" : ROOT + "/Notes/";
+  }
+  async pauseWrites() {
+    this.paused = true;
+    await Promise.allSettled(this.writes);
+  }
+  resumeWrites() {
+    this.paused = false;
+  }
+  write(action) {
+    if (this.paused) return Promise.reject(new Error("Library data migration is pending. Open Data storage in settings."));
+    const task = action().finally(() => this.writes.delete(task));
+    this.writes.add(task);
+    return task;
+  }
+  referencePath(bookId) {
+    return referencePath(bookId, this.root);
   }
   deletedBookIds() {
-    return new Set(this.app.vault.getMarkdownFiles().filter((file) => file.path === DELETED + file.basename + ".md" && idPattern.test(file.basename)).map((file) => file.basename));
+    return new Set(this.app.vault.getMarkdownFiles().filter((file) => file.path === this.deletedPath + file.basename + ".md" && idPattern.test(file.basename)).map((file) => file.basename));
   }
-  async deleteFromLibrary(book) {
+  deleteFromLibrary(book) {
+    return this.write(() => this.deleteFromLibraryInternal(book));
+  }
+  async deleteFromLibraryInternal(book) {
     if (!idPattern.test(book.id)) throw new Error("Invalid book ID.");
-    await this.ensureFolder(DELETED.slice(0, -1));
-    const path = DELETED + book.id + ".md";
-    if (this.app.vault.getAbstractFileByPath(path) instanceof import_obsidian2.TFile) return;
+    await this.ensureFolder(this.deletedPath.slice(0, -1));
+    const path = this.deletedPath + book.id + ".md";
+    if (this.app.vault.getAbstractFileByPath(path) instanceof import_obsidian3.TFile) return;
     try {
       await this.app.vault.create(path, "---\nbookId: " + book.id + "\n---\n");
     } catch (error) {
-      if (!(this.app.vault.getAbstractFileByPath(path) instanceof import_obsidian2.TFile)) throw error;
+      if (!(this.app.vault.getAbstractFileByPath(path) instanceof import_obsidian3.TFile)) throw error;
     }
   }
   async ensureFolder(path) {
-    if (!path || this.app.vault.getAbstractFileByPath(path) instanceof import_obsidian2.TFolder) return;
+    if (!path || this.app.vault.getAbstractFileByPath(path) instanceof import_obsidian3.TFolder) return;
     await this.ensureFolder(path.slice(0, Math.max(0, path.lastIndexOf("/"))));
     try {
       await this.app.vault.createFolder(path);
     } catch (error) {
-      if (!(this.app.vault.getAbstractFileByPath(path) instanceof import_obsidian2.TFolder)) throw error;
+      if (!(this.app.vault.getAbstractFileByPath(path) instanceof import_obsidian3.TFolder)) throw error;
     }
   }
   async metadata(path) {
     const file = this.app.vault.getAbstractFileByPath(path);
-    if (!(file instanceof import_obsidian2.TFile)) return;
+    if (!(file instanceof import_obsidian3.TFile)) return;
     const contents = await this.app.vault.read(file);
     const match = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(contents);
-    if (match) return (0, import_obsidian2.parseYaml)(match[1]);
+    if (match) return (0, import_obsidian3.parseYaml)(match[1]);
   }
   async snapshot() {
-    const state = await this.metadata(SNAPSHOT);
+    const state = await this.metadata(this.snapshotPath);
     if (state?.schema !== 1 || typeof state.origin !== "string" || typeof state.version !== "string" || typeof state.catalog !== "string") return;
     const origin = endpoint(state.origin);
     const books = JSON.parse(state.catalog);
     if (validBooks(books, origin)) return { schema: 1, origin, version: state.version, books };
   }
-  async saveSnapshot(state) {
+  saveSnapshot(state) {
+    return this.write(() => this.saveSnapshotInternal(state));
+  }
+  async saveSnapshotInternal(state) {
     const contents = "---\nschema: 1\norigin: " + JSON.stringify(state.origin) + "\nversion: " + JSON.stringify(state.version) + "\ncatalog: " + JSON.stringify(JSON.stringify(state.books)) + "\n---\n";
-    await this.ensureFolder(SNAPSHOT.slice(0, SNAPSHOT.lastIndexOf("/")));
-    const existing = this.app.vault.getAbstractFileByPath(SNAPSHOT);
-    if (existing instanceof import_obsidian2.TFile) {
+    await this.ensureFolder(this.snapshotPath.slice(0, this.snapshotPath.lastIndexOf("/")));
+    const existing = this.app.vault.getAbstractFileByPath(this.snapshotPath);
+    if (existing instanceof import_obsidian3.TFile) {
       await this.app.vault.process(existing, (current) => current === contents ? current : contents);
     } else {
       try {
-        await this.app.vault.create(SNAPSHOT, contents);
+        await this.app.vault.create(this.snapshotPath, contents);
       } catch (error) {
-        const synced = this.app.vault.getAbstractFileByPath(SNAPSHOT);
-        if (!(synced instanceof import_obsidian2.TFile)) throw error;
+        const synced = this.app.vault.getAbstractFileByPath(this.snapshotPath);
+        if (!(synced instanceof import_obsidian3.TFile)) throw error;
       }
     }
   }
   personals() {
     const result = /* @__PURE__ */ new Map();
     for (const file of this.app.vault.getMarkdownFiles()) {
-      if (!file.path.startsWith(PERSONAL)) continue;
+      if (!file.path.startsWith(this.personalPath)) continue;
       const data = this.app.metadataCache.getFileCache(file)?.frontmatter;
       if (data?.bookId !== file.basename) continue;
       result.set(file.basename, {
@@ -265,19 +409,22 @@ var LibraryStorage = class {
     }
     return result;
   }
-  async savePersonal(book, values) {
-    await this.ensureFolder(PERSONAL.slice(0, -1));
-    const path = PERSONAL + book.id + ".md";
+  savePersonal(book, values) {
+    return this.write(() => this.savePersonalInternal(book, values));
+  }
+  async savePersonalInternal(book, values) {
+    await this.ensureFolder(this.personalPath.slice(0, -1));
+    const path = this.personalPath + book.id + ".md";
     let file = this.app.vault.getAbstractFileByPath(path);
     if (!file) {
       try {
         file = await this.app.vault.create(path, "---\nbookId: " + book.id + "\n---\n");
       } catch (error) {
         file = this.app.vault.getAbstractFileByPath(path);
-        if (!(file instanceof import_obsidian2.TFile)) throw error;
+        if (!(file instanceof import_obsidian3.TFile)) throw error;
       }
     }
-    if (!(file instanceof import_obsidian2.TFile)) throw new Error("The metadata path is occupied.");
+    if (!(file instanceof import_obsidian3.TFile)) throw new Error("The metadata path is occupied.");
     await this.app.fileManager.processFrontMatter(file, (data) => {
       data.bookId = book.id;
       for (const [key, value] of Object.entries(values)) data[key] = value || null;
@@ -286,17 +433,20 @@ var LibraryStorage = class {
   progress() {
     const result = /* @__PURE__ */ new Map();
     for (const file of this.app.vault.getMarkdownFiles()) {
-      if (!file.path.startsWith(PROGRESS)) continue;
+      if (!file.path.startsWith(this.progressPath)) continue;
       const data = this.app.metadataCache.getFileCache(file)?.frontmatter;
-      if (!validProgress(data) || file.path !== PROGRESS + data.bookId + "/" + data.id + ".md") continue;
-      const entries = result.get(data.bookId) ?? [];
-      entries.push(data);
-      result.set(data.bookId, entries);
+      if (!validProgress(data) || file.path !== this.progressPath + data.bookId + "/" + data.id + ".md") continue;
+      const entries2 = result.get(data.bookId) ?? [];
+      entries2.push(data);
+      result.set(data.bookId, entries2);
     }
     return result;
   }
-  async saveProgress(entry) {
-    const folder = PROGRESS + entry.bookId;
+  saveProgress(entry) {
+    return this.write(() => this.saveProgressInternal(entry));
+  }
+  async saveProgressInternal(entry) {
+    const folder = this.progressPath + entry.bookId;
     await this.ensureFolder(folder);
     const fields = Object.entries({ schema: 1, ...entry });
     await this.app.vault.create(
@@ -304,7 +454,10 @@ var LibraryStorage = class {
       "---\n" + fields.map(([key, value]) => key + ": " + JSON.stringify(value)).join("\n") + "\n---\n"
     );
   }
-  ensureReference(book, path = referencePath(book.id)) {
+  ensureReference(book, path = this.referencePath(book.id)) {
+    return this.write(() => this.ensureReferenceInternal(book, path));
+  }
+  ensureReferenceInternal(book, path = this.referencePath(book.id)) {
     const pending = this.pendingRefs.get(path);
     if (pending) return pending;
     const task = this.writeReference(book, path).finally(() => this.pendingRefs.delete(path));
@@ -323,10 +476,10 @@ var LibraryStorage = class {
         return await this.app.vault.createBinary(path, contents.buffer);
       } catch (error) {
         file = this.app.vault.getAbstractFileByPath(path);
-        if (!(file instanceof import_obsidian2.TFile)) throw error;
+        if (!(file instanceof import_obsidian3.TFile)) throw error;
       }
     }
-    if (!(file instanceof import_obsidian2.TFile) || file.stat.size > 300) {
+    if (!(file instanceof import_obsidian3.TFile) || file.stat.size > 300) {
       throw new Error("Another file occupies the reference path.");
     }
     const old = new TextDecoder().decode(await this.app.vault.readBinary(file));
@@ -345,6 +498,9 @@ var LibraryStorage = class {
     return file;
   }
   note(book, root) {
+    return this.write(() => this.noteInternal(book, root));
+  }
+  noteInternal(book, root) {
     const pending = this.pendingNotes.get(book.id);
     if (pending) return pending;
     const task = this.findOrCreateNote(book, root).finally(() => this.pendingNotes.delete(book.id));
@@ -360,30 +516,36 @@ var LibraryStorage = class {
     return [record, ...notes];
   }
   findNote(book) {
-    const files = this.app.vault.getMarkdownFiles().filter((file) => !file.path.startsWith("Biblioteca/_state/"));
+    const files = this.app.vault.getMarkdownFiles().filter((file) => !file.path.startsWith(this.statePath + "/"));
     return files.find((file) => {
       const data = this.app.metadataCache.getFileCache(file)?.frontmatter;
-      return this.isBookRecord(data, book) || data?.bookId === book.id && data?.refPath === referencePath(book.id);
-    }) ?? files.find((file) => file.path.startsWith(NOTES) && file.basename.endsWith("-" + book.id));
+      return this.isBookRecord(data, book, file.path) || data?.bookId === book.id && data?.refPath === this.referencePath(book.id);
+    }) ?? files.find((file) => file.path.startsWith(this.notesPath) && file.basename.endsWith("-" + book.id));
   }
-  isBookRecord(data, book) {
-    return (typeof data?.Title === "string" || typeof data?.Livro === "string") && typeof data?.PDF === "string" && data.PDF.startsWith("[[" + referencePath(book.id) + "|");
+  isBookRecord(data, book, source) {
+    if (typeof data?.Title !== "string" && typeof data?.Livro !== "string" || typeof data?.PDF !== "string") return false;
+    const target = /^\[\[([^#|\]]+)/.exec(data.PDF)?.[1];
+    const reference = this.referencePath(book.id);
+    return target === reference || !!target && this.app.metadataCache.getFirstLinkpathDest?.(target, source)?.path === reference;
   }
   pdfLink(book) {
-    return "[[" + referencePath(book.id) + "|Open book]]";
+    return "[[" + this.referencePath(book.id) + "|Open book]]";
   }
   folderReference(values) {
     const { folder, fileName } = values ?? {};
     if (!folder || !fileName || bookFileName(fileName) !== fileName) return;
     try {
-      return studyFolder(folder) + (values?.organized ? "/Files/" : "/") + fileName + ".pdf";
+      return studyFolder(folder, this.root) + (values?.organized ? "/Files/" : "/") + fileName + ".pdf";
     } catch {
       return;
     }
   }
-  async linkFolder(book, input) {
-    const folder = studyFolder(input);
-    await this.ensureReference(book);
+  linkFolder(book, input) {
+    return this.write(() => this.linkFolderInternal(book, input));
+  }
+  async linkFolderInternal(book, input) {
+    const folder = studyFolder(input, this.root);
+    await this.ensureReferenceInternal(book);
     const values = this.personals().get(book.id);
     let fileName = values?.fileName ?? bookFileName(values?.customTitle ?? book.title);
     const previousReference = this.folderReference(values);
@@ -392,7 +554,7 @@ var LibraryStorage = class {
     const existing = this.findNote(book) ?? await this.noteAt(notes + "/" + fileName + ".md", book) ?? (values?.folder ? await this.noteAt(values.folder + "/" + fileName + ".md", book) : void 0);
     await this.ensureFolder(folder);
     const occupied = this.app.vault.getAbstractFileByPath(files + "/" + fileName + ".pdf");
-    const alreadyLinked = occupied instanceof import_obsidian2.TFile && occupied.stat.size <= 300 && new TextDecoder().decode(await this.app.vault.readBinary(occupied)) === book.readUrl;
+    const alreadyLinked = occupied instanceof import_obsidian3.TFile && occupied.stat.size <= 300 && new TextDecoder().decode(await this.app.vault.readBinary(occupied)) === book.readUrl;
     if (occupied && !alreadyLinked && this.folderReference(values) !== occupied.path) {
       fileName = bookFileName(fileName.slice(0, 72) + " (" + book.id.slice(0, 8) + ")");
     }
@@ -405,30 +567,30 @@ var LibraryStorage = class {
       await this.app.fileManager.renameFile(existing, target);
     }
     const old = previousReference ? this.app.vault.getAbstractFileByPath(previousReference) : void 0;
-    if (values?.folder === folder && !values.organized && old instanceof import_obsidian2.TFile && old.stat.size <= 300 && !this.app.vault.getAbstractFileByPath(targetReference) && new TextDecoder().decode(await this.app.vault.readBinary(old)) === book.readUrl) {
+    if (values?.folder === folder && !values.organized && old instanceof import_obsidian3.TFile && old.stat.size <= 300 && !this.app.vault.getAbstractFileByPath(targetReference) && new TextDecoder().decode(await this.app.vault.readBinary(old)) === book.readUrl) {
       await this.ensureFolder(files);
       await this.app.fileManager.renameFile(old, targetReference);
     }
-    await this.ensureReference(book, targetReference);
+    await this.ensureReferenceInternal(book, targetReference);
     const note = existing ?? await this.createNote(book, notes, fileName);
-    await this.savePersonal(book, { folder, fileName, organized: true });
+    await this.savePersonalInternal(book, { folder, fileName, organized: true });
     return note;
   }
   async noteAt(path, book) {
     const file = this.app.vault.getAbstractFileByPath(path);
-    if (file instanceof import_obsidian2.TFile && this.isBookRecord(await this.metadata(path), book)) return file;
+    if (file instanceof import_obsidian3.TFile && this.isBookRecord(await this.metadata(path), book, path)) return file;
   }
   async findOrCreateNote(book, root) {
-    await this.ensureReference(book);
+    await this.ensureReferenceInternal(book);
     const existing = this.findNote(book);
     const values = this.personals().get(book.id);
     const linked = this.folderReference(values);
-    if (linked) await this.ensureReference(book, linked);
+    if (linked) await this.ensureReferenceInternal(book, linked);
     if (existing) return existing;
     if (values?.folder && linked) return this.createNote(book, values.folder + (values.organized ? "/Notes" : ""), values.fileName);
     const fileName = bookFileName(values?.customTitle ?? book.title);
-    const folder = studyFolder(root) + "/" + fileName + " (" + book.id.slice(0, 8) + ")";
-    return this.linkFolder(book, folder);
+    const folder = studyFolder(root, this.root) + "/" + fileName + " (" + book.id.slice(0, 8) + ")";
+    return this.linkFolderInternal(book, folder);
   }
   async createNote(book, folder, fileName) {
     await this.ensureFolder(folder);
@@ -449,13 +611,16 @@ var LibraryStorage = class {
       throw error;
     }
   }
-  async createStudyNote(book, ficha, title, templatePath) {
+  createStudyNote(book, ficha, title, templatePath) {
+    return this.write(() => this.createStudyNoteInternal(book, ficha, title, templatePath));
+  }
+  async createStudyNoteInternal(book, ficha, title, templatePath) {
     const requested = title.trim().replace(/\.md$/i, "").trim();
     if (!requested || !ficha.parent) throw new Error("Enter a note title.");
     const name = bookFileName(requested);
     const template = templatePath ? this.app.vault.getAbstractFileByPath(templatePath) : void 0;
-    if (templatePath && !(template instanceof import_obsidian2.TFile)) throw new Error("The study note template was not found in the vault.");
-    const body = template instanceof import_obsidian2.TFile ? await this.app.vault.read(template) : "# " + name + "\n";
+    if (templatePath && !(template instanceof import_obsidian3.TFile)) throw new Error("The study note template was not found in the vault.");
+    const body = template instanceof import_obsidian3.TFile ? await this.app.vault.read(template) : "# " + name + "\n";
     const notes = ficha.parent.name === "Notes" ? ficha.parent.path : ficha.parent.isRoot() ? "Notes" : ficha.parent.path + "/Notes";
     await this.ensureFolder(notes);
     const directory = notes + "/";
@@ -467,10 +632,10 @@ var LibraryStorage = class {
 };
 
 // local-typescript:C:\Users\Fabricio\Documents\PluginLivrosObsidian\plugin\src\view.ts
-var import_obsidian3 = require("obsidian");
+var import_obsidian4 = require("obsidian");
 var VIEW = "obsidian-library";
 var DETAILS_VIEW = "obsidian-library-details";
-var BookDetailsView = class extends import_obsidian3.ItemView {
+var BookDetailsView = class extends import_obsidian4.ItemView {
   getViewType() {
     return DETAILS_VIEW;
   }
@@ -486,7 +651,7 @@ var BookDetailsView = class extends import_obsidian3.ItemView {
   }
 };
 function showChoiceMenu(button, options, value, select, left = false) {
-  const menu = new import_obsidian3.Menu();
+  const menu = new import_obsidian4.Menu();
   for (const [key, label] of options) {
     menu.addItem((item) => item.setTitle(label).setChecked(key === value).onClick(() => select(key)));
   }
@@ -500,7 +665,7 @@ var STATUSES = [["", "All statuses"], ["reading", "Reading"], ["new", "Unread"],
 var SORTS = [["title", "Title"], ["author", "Author"], ["reading", "Last read"], ["added", "Recently added"]];
 var collator = new Intl.Collator("en", { sensitivity: "base", numeric: true });
 var normalize = (value) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("en");
-var LibraryView = class extends import_obsidian3.ItemView {
+var LibraryView = class extends import_obsidian4.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
     this.plugin = plugin;
@@ -559,7 +724,7 @@ var LibraryView = class extends import_obsidian3.ItemView {
       this.query = search.value;
       this.reset();
     });
-    const filterModal = import_obsidian3.Platform.isMobile ? new import_obsidian3.Modal(this.app) : void 0;
+    const filterModal = import_obsidian4.Platform.isMobile ? new import_obsidian4.Modal(this.app) : void 0;
     filterModal?.setTitle("Filter and sort");
     if (filterModal) this.iconButton(toolbar, "Filter and sort", "list-filter", () => filterModal.open());
     const filters = (filterModal?.contentEl ?? toolbar).createDiv("ol-toolbar ol-filter-controls");
@@ -602,7 +767,7 @@ var LibraryView = class extends import_obsidian3.ItemView {
       change(value2);
       this.reset();
     };
-    if (import_obsidian3.Platform.isMobile) {
+    if (import_obsidian4.Platform.isMobile) {
       const select = parent.createEl("select", { attr: { "aria-label": name } });
       select.addEventListener("change", () => selectValue(select.value));
       return (options2, value2) => {
@@ -618,7 +783,7 @@ var LibraryView = class extends import_obsidian3.ItemView {
     button.setAttribute("aria-haspopup", "menu");
     button.setAttribute("aria-expanded", "false");
     const label = button.createSpan();
-    (0, import_obsidian3.setIcon)(button.createSpan({ attr: { "aria-hidden": "true" } }), "chevron-down");
+    (0, import_obsidian4.setIcon)(button.createSpan({ attr: { "aria-hidden": "true" } }), "chevron-down");
     return (nextOptions, nextValue) => {
       options = nextOptions;
       value = nextValue;
@@ -638,7 +803,7 @@ var LibraryView = class extends import_obsidian3.ItemView {
   async render() {
     if (!this.isRenderingEnabled) return;
     this.personals = this.plugin.storage.personals();
-    this.heads = new Map([...this.plugin.storage.progress()].map(([id, entries]) => [id, progressHeads(entries)]));
+    this.heads = new Map([...this.plugin.storage.progress()].map(([id, entries2]) => [id, progressHeads(entries2)]));
     const deleted = this.plugin.storage.deletedBookIds();
     this.books = this.plugin.books.filter((book) => !deleted.has(book.id));
     this.updateFilters();
@@ -720,13 +885,13 @@ var LibraryView = class extends import_obsidian3.ItemView {
       const item = this.button(shelf, "", () => this.continue(book));
       item.addClass("ol-resume-book");
       item.setAttribute("aria-label", label);
-      (0, import_obsidian3.setTooltip)(item, label);
+      (0, import_obsidian4.setTooltip)(item, label);
       this.renderCover(item, book);
       const info = item.createSpan({ cls: "ol-resume-info" });
       info.createSpan({ text: title, cls: "ol-card-title" });
       if (this.plugin.appearance?.showProgress !== false) this.renderProgress(info, book);
       const action = item.createSpan({ cls: "ol-resume-action", attr: { "aria-hidden": "true" } });
-      (0, import_obsidian3.setIcon)(action, current ? "play" : "book-open");
+      (0, import_obsidian4.setIcon)(action, current ? "play" : "book-open");
     }
   }
   draw() {
@@ -776,9 +941,9 @@ var LibraryView = class extends import_obsidian3.ItemView {
   }
   renderProgress(parent, book, showPage = true) {
     const progress = this.current(book);
-    const conflict = hasConflict(this.heads.get(book.id) ?? []);
-    const percent = conflict ? void 0 : progress?.completed ? 100 : progress && book.pageCount ? Math.min(100, Math.round(progress.page / book.pageCount * 100)) : void 0;
-    const status = book.availability === "missing" ? "Unavailable" : conflict ? "Conflicting reading progress" : progress?.completed ? "Finished" : this.statusFor(book) === "reading" ? "Page " + progress?.page : "Not started";
+    const conflict2 = hasConflict(this.heads.get(book.id) ?? []);
+    const percent = conflict2 ? void 0 : progress?.completed ? 100 : progress && book.pageCount ? Math.min(100, Math.round(progress.page / book.pageCount * 100)) : void 0;
+    const status = book.availability === "missing" ? "Unavailable" : conflict2 ? "Conflicting reading progress" : progress?.completed ? "Finished" : this.statusFor(book) === "reading" ? "Page " + progress?.page : "Not started";
     const row = parent.createSpan({ cls: "ol-progress" });
     const label = row.createSpan({ cls: "ol-progress-label ol-secondary" });
     label.createSpan({ text: showPage || !progress || progress.completed || book.availability === "missing" ? status : "" });
@@ -812,13 +977,13 @@ var LibraryView = class extends import_obsidian3.ItemView {
     this.bookMenu(book).showAtPosition({ x: position.left, y: position.bottom });
   }
   bookMenu(book) {
-    const options = new import_obsidian3.Menu();
+    const options = new import_obsidian4.Menu();
     const add = (label, icon, action) => options.addItem((item) => item.setTitle(label).setIcon(icon).onClick(() => void this.plugin.run(async () => action())));
     const progress = this.current(book);
-    const conflict = hasConflict(this.heads.get(book.id) ?? []);
+    const conflict2 = hasConflict(this.heads.get(book.id) ?? []);
     if (book.availability === "available") {
       add("Open book", "book-open", () => this.continue(book));
-      if (!import_obsidian3.Platform.isMobile) add("Open to the side", "columns-2", () => this.continue(book, true));
+      if (!import_obsidian4.Platform.isMobile) add("Open to the side", "columns-2", () => this.continue(book, true));
       if ((progress?.page ?? 1) > 1) add("Open at first page", "file-text", () => this.plugin.openBook(book));
     }
     add("Copy PDF link", "link", () => this.plugin.copyLink(book));
@@ -835,18 +1000,18 @@ var LibraryView = class extends import_obsidian3.ItemView {
       add("Change cover...", "image", () => this.coverDialog(book));
     }
     options.addSeparator();
-    add(conflict ? "Resolve reading progress..." : "Confirm page...", "book-open-check", () => this.showBookProgress(book));
-    if (!conflict && !progress?.completed) add("Mark as finished", "check", () => this.plugin.record(book, progress?.page ?? 1, true, progress ? [progress] : []));
-    if (!conflict && progress && (progress.completed || progress.page > 1)) add("Reset progress...", "rotate-ccw", () => this.resetProgressDialog(book, progress));
+    add(conflict2 ? "Resolve reading progress..." : "Confirm page...", "book-open-check", () => this.showBookProgress(book));
+    if (!conflict2 && !progress?.completed) add("Mark as finished", "check", () => this.plugin.record(book, progress?.page ?? 1, true, progress ? [progress] : []));
+    if (!conflict2 && progress && (progress.completed || progress.page > 1)) add("Reset progress...", "rotate-ccw", () => this.resetProgressDialog(book, progress));
     options.addSeparator();
     add("Delete from library...", "trash-2", () => this.deleteDialog(book));
     return options;
   }
   resetProgressDialog(book, progress) {
-    const modal = new import_obsidian3.Modal(this.app);
+    const modal = new import_obsidian4.Modal(this.app);
     modal.setTitle("Reset reading progress?");
     modal.contentEl.createEl("p", { text: this.title(book) + " will return to page 1." });
-    new import_obsidian3.Setting(modal.contentEl).addButton((button) => button.setButtonText("Cancel").onClick(() => modal.close())).addButton((button) => button.setButtonText("Reset progress").setWarning().onClick(async () => {
+    new import_obsidian4.Setting(modal.contentEl).addButton((button) => button.setButtonText("Cancel").onClick(() => modal.close())).addButton((button) => button.setButtonText("Reset progress").setWarning().onClick(async () => {
       button.setDisabled(true);
       await this.plugin.run(async () => {
         const heads = progressHeads(this.plugin.storage.progress().get(book.id) ?? []);
@@ -863,12 +1028,12 @@ var LibraryView = class extends import_obsidian3.ItemView {
     modal.open();
   }
   deleteDialog(book) {
-    const modal = new import_obsidian3.Modal(this.app);
+    const modal = new import_obsidian4.Modal(this.app);
     modal.setTitle("Delete from library?");
     modal.contentEl.createEl("p", {
       text: "Hide \u201C" + this.title(book) + "\u201D from your library. The original PDF, notes, and reading progress are kept."
     });
-    new import_obsidian3.Setting(modal.contentEl).addButton((button) => button.setButtonText("Cancel").onClick(() => modal.close())).addButton((button) => button.setButtonText("Delete from library").setWarning().onClick(async () => {
+    new import_obsidian4.Setting(modal.contentEl).addButton((button) => button.setButtonText("Cancel").onClick(() => modal.close())).addButton((button) => button.setButtonText("Delete from library").setWarning().onClick(async () => {
       button.setDisabled(true);
       await this.plugin.run(async () => {
         await this.plugin.deleteFromLibrary(book);
@@ -880,7 +1045,7 @@ var LibraryView = class extends import_obsidian3.ItemView {
   }
   renderCover(parent, book) {
     const cover = parent.createEl("span", { cls: "ol-cover", attr: { "aria-hidden": "true" } });
-    (0, import_obsidian3.setIcon)(cover, "file-text");
+    (0, import_obsidian4.setIcon)(cover, "file-text");
     cover.createSpan({ text: "PDF" });
     const page = this.personals.get(book.id)?.coverPage;
     const selectedPage = page && book.pageCount && page <= book.pageCount ? page : void 0;
@@ -909,14 +1074,14 @@ var LibraryView = class extends import_obsidian3.ItemView {
     const button = this.button(parent, "", action);
     button.addClass("clickable-icon", "ol-icon-button");
     button.setAttribute("aria-label", label);
-    (0, import_obsidian3.setTooltip)(button, label);
-    (0, import_obsidian3.setIcon)(button, icon);
+    (0, import_obsidian4.setTooltip)(button, label);
+    (0, import_obsidian4.setIcon)(button, icon);
     return button;
   }
   connection() {
     const source = this.plugin.localFolder || this.plugin.origin;
     if (!source) return this.configure();
-    const modal = new import_obsidian3.Modal(this.app);
+    const modal = new import_obsidian4.Modal(this.app);
     modal.setTitle("Library connection");
     const info = modal.contentEl.createDiv("ol-connection-info");
     const status = info.createDiv({ cls: "ol-connection-state", attr: { role: "status" } });
@@ -959,27 +1124,27 @@ var LibraryView = class extends import_obsidian3.ItemView {
     modal.open();
   }
   configure() {
-    const modal = new import_obsidian3.Modal(this.app);
+    const modal = new import_obsidian4.Modal(this.app);
     modal.setTitle("Library source");
     modal.modalEl.addClass("ol-source-modal");
-    (0, import_obsidian3.setIcon)(modal.titleEl.createSpan({ attr: { "aria-hidden": "true" } }), "database");
+    (0, import_obsidian4.setIcon)(modal.titleEl.createSpan({ attr: { "aria-hidden": "true" } }), "database");
     const close = modal.modalEl.createEl("button", {
       cls: "ol-source-close",
       attr: { type: "button", "aria-label": "Close library source" }
     });
-    (0, import_obsidian3.setIcon)(close, "x");
+    (0, import_obsidian4.setIcon)(close, "x");
     close.addEventListener("click", () => modal.close());
     renderLibrarySettings(modal.contentEl, this.plugin, () => modal.close());
     modal.open();
   }
   folderDialog(book) {
-    const modal = new import_obsidian3.Modal(this.app);
+    const modal = new import_obsidian4.Modal(this.app);
     modal.setTitle("Book study folder");
     let path = this.personals.get(book.id)?.folder ?? "";
-    new import_obsidian3.Setting(modal.contentEl).setName("Vault folder").setDesc("Creates Files for the PDF reference and Notes for the book record and new study notes.").addText((text) => text.setValue(path).setPlaceholder("Studies/Software Engineering/Book").onChange((value) => {
+    new import_obsidian4.Setting(modal.contentEl).setName("Vault folder").setDesc("Creates Files for the PDF reference and Notes for the book record and new study notes.").addText((text) => text.setValue(path).setPlaceholder("Studies/Software Engineering/Book").onChange((value) => {
       path = value;
     }));
-    new import_obsidian3.Setting(modal.contentEl).addButton((button) => button.setButtonText("Link folder").setCta().onClick(async () => {
+    new import_obsidian4.Setting(modal.contentEl).addButton((button) => button.setButtonText("Link folder").setCta().onClick(async () => {
       button.setDisabled(true);
       await this.plugin.run(async () => {
         await this.plugin.linkFolder(book, path);
@@ -990,10 +1155,10 @@ var LibraryView = class extends import_obsidian3.ItemView {
     modal.open();
   }
   coverDialog(book) {
-    const modal = new import_obsidian3.Modal(this.app);
+    const modal = new import_obsidian4.Modal(this.app);
     modal.setTitle("Cover page");
     let value = String(this.personals.get(book.id)?.coverPage ?? 1);
-    new import_obsidian3.Setting(modal.contentEl).setName("PDF page").setDesc("Use 1 to return to the first page. A custom cover image on the server takes priority.").addText((text) => {
+    new import_obsidian4.Setting(modal.contentEl).setName("PDF page").setDesc("Use 1 to return to the first page. A custom cover image on the server takes priority.").addText((text) => {
       text.inputEl.type = "number";
       text.inputEl.min = "1";
       text.inputEl.max = String(book.pageCount);
@@ -1001,7 +1166,7 @@ var LibraryView = class extends import_obsidian3.ItemView {
         value = next;
       });
     });
-    new import_obsidian3.Setting(modal.contentEl).addButton((button) => button.setButtonText("Save cover").setCta().onClick(async () => {
+    new import_obsidian4.Setting(modal.contentEl).addButton((button) => button.setButtonText("Save cover").setCta().onClick(async () => {
       button.setDisabled(true);
       await this.plugin.run(async () => {
         const coverPage = Number(value);
@@ -1016,10 +1181,10 @@ var LibraryView = class extends import_obsidian3.ItemView {
     modal.open();
   }
   studyNoteDialog(book) {
-    const modal = new import_obsidian3.Modal(this.app);
+    const modal = new import_obsidian4.Modal(this.app);
     modal.setTitle("New note");
     let name = "";
-    const canSplit = !import_obsidian3.Platform.isMobile && book.availability === "available";
+    const canSplit = !import_obsidian4.Platform.isMobile && book.availability === "available";
     let field;
     const create = async () => {
       if (field.disabled) return;
@@ -1030,7 +1195,7 @@ var LibraryView = class extends import_obsidian3.ItemView {
       });
       field.disabled = false;
     };
-    new import_obsidian3.Setting(modal.contentEl).setName("Filename").addText((text) => {
+    new import_obsidian4.Setting(modal.contentEl).setName("Filename").addText((text) => {
       field = text.inputEl;
       text.setPlaceholder("Chapter 1").onChange((value) => {
         name = value;
@@ -1041,16 +1206,16 @@ var LibraryView = class extends import_obsidian3.ItemView {
         void create();
       });
     });
-    new import_obsidian3.Setting(modal.contentEl).addButton((button) => button.setButtonText(canSplit ? "Create and study" : "Create note").setCta().onClick(create));
+    new import_obsidian4.Setting(modal.contentEl).addButton((button) => button.setButtonText(canSplit ? "Create and study" : "Create note").setCta().onClick(create));
     modal.open();
     field.focus();
   }
   showBookProgress(book) {
-    const modal = new import_obsidian3.Modal(this.app);
+    const modal = new import_obsidian4.Modal(this.app);
     modal.setTitle("Reading progress for " + this.title(book));
     const heads = progressHeads(this.plugin.storage.progress().get(book.id) ?? []);
-    const conflict = hasConflict(heads);
-    if (conflict) {
+    const conflict2 = hasConflict(heads);
+    if (conflict2) {
       modal.contentEl.createEl("p", { text: "Choose which reading update to keep." });
       for (const head of heads) {
         const date = new Date(head.updatedAt).toLocaleString();
@@ -1066,17 +1231,17 @@ var LibraryView = class extends import_obsidian3.ItemView {
       if (current) modal.contentEl.createEl("p", {
         text: "Last confirmed on " + new Date(current.updatedAt).toLocaleString()
       });
-      new import_obsidian3.Setting(modal.contentEl).setName("Last confirmed page").addText((text) => {
+      new import_obsidian4.Setting(modal.contentEl).setName("Last confirmed page").addText((text) => {
         text.inputEl.type = "number";
         text.inputEl.min = "1";
         text.setValue(value).onChange((next) => {
           value = next;
         });
       });
-      new import_obsidian3.Setting(modal.contentEl).setName("Completed").addToggle((toggle) => toggle.setValue(complete).onChange((next) => {
+      new import_obsidian4.Setting(modal.contentEl).setName("Completed").addToggle((toggle) => toggle.setValue(complete).onChange((next) => {
         complete = next;
       }));
-      new import_obsidian3.Setting(modal.contentEl).addButton((button) => button.setButtonText("Save progress").setCta().onClick(async () => {
+      new import_obsidian4.Setting(modal.contentEl).addButton((button) => button.setButtonText("Save progress").setCta().onClick(async () => {
         button.setDisabled(true);
         await this.plugin.run(async () => {
           await this.plugin.record(book, Number(value), complete, heads);
@@ -1090,7 +1255,7 @@ var LibraryView = class extends import_obsidian3.ItemView {
   async showBookDetails(book) {
     const workspace = this.app.workspace;
     const request = ++this.detailsRequest;
-    const leaf = import_obsidian3.Platform.isMobile ? void 0 : workspace.getLeavesOfType(DETAILS_VIEW)[0] ?? workspace.getRightLeaf(false);
+    const leaf = import_obsidian4.Platform.isMobile ? void 0 : workspace.getLeavesOfType(DETAILS_VIEW)[0] ?? workspace.getRightLeaf(false);
     if (leaf) {
       if (leaf.view.getViewType() !== DETAILS_VIEW) await leaf.setViewState({ type: DETAILS_VIEW });
       if (request !== this.detailsRequest) return;
@@ -1101,7 +1266,7 @@ var LibraryView = class extends import_obsidian3.ItemView {
         return;
       }
     }
-    const modal = new import_obsidian3.Modal(this.app);
+    const modal = new import_obsidian4.Modal(this.app);
     modal.setTitle("Book details");
     modal.modalEl.addClass("ol-details-modal");
     this.renderDetails(modal.contentEl, book, () => modal.close(), true);
@@ -1149,11 +1314,11 @@ var LibraryView = class extends import_obsidian3.ItemView {
         if (inModal) close();
       });
       row.addClass("ol-note-link");
-      (0, import_obsidian3.setIcon)(row.createSpan({ attr: { "aria-hidden": "true" } }), "notebook-pen");
+      (0, import_obsidian4.setIcon)(row.createSpan({ attr: { "aria-hidden": "true" } }), "notebook-pen");
       const label = row.createSpan();
       label.createSpan({ text: file.basename });
       label.createSpan({ text: index === 0 ? "Book record" : "Study note", cls: "ol-secondary" });
-      (0, import_obsidian3.setIcon)(row.createSpan({ attr: { "aria-hidden": "true" } }), "chevron-right");
+      (0, import_obsidian4.setIcon)(row.createSpan({ attr: { "aria-hidden": "true" } }), "chevron-right");
     }
     this.button(notes, "+ Create study note", () => {
       if (inModal) close();
@@ -1176,29 +1341,29 @@ var LibraryView = class extends import_obsidian3.ItemView {
     }
   }
   editMetadata(book) {
-    const modal = new import_obsidian3.Modal(this.app);
+    const modal = new import_obsidian4.Modal(this.app);
     modal.setTitle("Edit metadata");
     const edit = modal.contentEl;
     const personal = this.personals.get(book.id);
     let title = personal?.customTitle ?? "";
     let category = personal?.customCategory ?? "";
-    new import_obsidian3.Setting(edit).setName("Custom title").addText((text) => text.setPlaceholder(book.title).setValue(title).onChange((value) => {
+    new import_obsidian4.Setting(edit).setName("Custom title").addText((text) => text.setPlaceholder(book.title).setValue(title).onChange((value) => {
       title = value;
     }));
-    new import_obsidian3.Setting(edit).setName("Custom category").addText((text) => text.setPlaceholder(book.category).setValue(category).onChange((value) => {
+    new import_obsidian4.Setting(edit).setName("Custom category").addText((text) => text.setPlaceholder(book.category).setValue(category).onChange((value) => {
       category = value;
     }));
-    new import_obsidian3.Setting(edit).addButton((button) => button.setButtonText("Save changes").onClick(() => this.plugin.run(async () => {
+    new import_obsidian4.Setting(edit).addButton((button) => button.setButtonText("Save changes").onClick(() => this.plugin.run(async () => {
       await this.plugin.personalize(book, { customTitle: title.trim(), customCategory: category.trim() });
       modal.close();
     })));
     modal.open();
   }
 };
-function chooseVaultPath(plugin, folders, onSelect) {
-  const options = folders ? plugin.app.vault.getAllFolders() : plugin.app.vault.getMarkdownFiles();
+function chooseVaultPath(plugin, folders2, onSelect) {
+  const options = folders2 ? plugin.app.vault.getAllFolders() : plugin.app.vault.getMarkdownFiles();
   const paths = options.map((file) => file.path).sort(collator.compare);
-  const picker = new class extends import_obsidian3.SuggestModal {
+  const picker = new class extends import_obsidian4.SuggestModal {
     getSuggestions(query) {
       return paths.filter((path) => normalize(path).includes(normalize(query.trim())));
     }
@@ -1209,21 +1374,90 @@ function chooseVaultPath(plugin, folders, onSelect) {
       onSelect(path);
     }
   }(plugin.app);
-  picker.setPlaceholder(folders ? "Search vault folders..." : "Search Markdown files...");
+  picker.setPlaceholder(folders2 ? "Search vault folders..." : "Search Markdown files...");
   picker.open();
+}
+function confirmDataMove(plugin, from, to) {
+  return new Promise((resolve) => {
+    const modal = new import_obsidian4.Modal(plugin.app);
+    modal.setTitle("Move library data?");
+    modal.contentEl.createEl("p", { text: "From " + from + "/" });
+    modal.contentEl.createEl("p", { text: "To " + to + "/" });
+    modal.contentEl.createEl("p", { text: "Pause Fast Note Sync on all devices before moving the data." });
+    new import_obsidian4.Setting(modal.contentEl).addButton((button) => button.setButtonText("Cancel").onClick(() => modal.close())).addButton((button) => button.setButtonText("Move data").setCta().onClick(() => {
+      resolve(true);
+      modal.close();
+    }));
+    modal.onClose = () => resolve(false);
+    modal.open();
+  });
+}
+function renderDataStorage(settings, plugin) {
+  const group = settingsGroup(settings, "Data storage", "database");
+  const row = new import_obsidian4.Setting(group).setName("Library data folder").setDesc("Choose where the library stores its catalog, reading progress, and PDF references.");
+  const feedback = group.createDiv({ cls: "ol-secondary", attr: { role: "status" } });
+  let path = plugin.dataMigration?.to ?? plugin.storage.root;
+  let field;
+  let browse;
+  const update = () => {
+    const pending = plugin.dataMigration;
+    field.disabled = !!pending;
+    if (browse) browse.disabled = !!pending;
+    if (pending) feedback.setText("Current folder: " + pending.from + "/. Select Apply to resume the move to " + pending.to + "/.");
+  };
+  row.addText((input) => {
+    input.setValue(path).onChange((value) => {
+      path = value;
+    });
+    field = input.inputEl;
+    field.setAttribute("aria-label", "Library data folder");
+    browse = field.parentElement?.createEl("button", {
+      cls: "ol-settings-icon",
+      attr: { type: "button", "aria-label": "Select library data folder" }
+    });
+    if (!browse) return;
+    (0, import_obsidian4.setIcon)(browse, "folder");
+    (0, import_obsidian4.setTooltip)(browse, "Select library data folder");
+    browse.addEventListener("click", () => chooseVaultPath(plugin, true, (selected) => {
+      path = selected;
+      input.setValue(selected);
+    }));
+  });
+  update();
+  row.addButton((button) => {
+    button.setButtonText("Apply");
+    button.onClick(async () => {
+      button.setDisabled(true);
+      field.disabled = true;
+      if (browse) browse.disabled = true;
+      try {
+        if (await plugin.changeDataFolder(path, (from, to) => confirmDataMove(plugin, from, to))) {
+          path = plugin.storage.root;
+          field.value = path;
+          feedback.setText("Library data folder: " + path + "/");
+        }
+      } catch (error) {
+        update();
+        feedback.setText(error instanceof Error ? error.message : "Could not change the library data folder.");
+      } finally {
+        if (!plugin.dataMigration) update();
+        button.setDisabled(false);
+      }
+    });
+  });
 }
 function settingsGroup(parent, title, icon) {
   const section = parent.createEl("section", { cls: "ol-settings-section" });
   if (title && icon) {
     const heading = section.createEl("h3");
-    (0, import_obsidian3.setIcon)(heading.createSpan({ attr: { "aria-hidden": "true" } }), icon);
+    (0, import_obsidian4.setIcon)(heading.createSpan({ attr: { "aria-hidden": "true" } }), icon);
     heading.createSpan({ text: title });
   }
   return section.createDiv("ol-settings-group");
 }
 function addSourceIcon(parent, icon, cls) {
   const el = parent.createSpan({ cls, attr: { "aria-hidden": "true" } });
-  (0, import_obsidian3.setIcon)(el, icon);
+  (0, import_obsidian4.setIcon)(el, icon);
   return el;
 }
 function renderLibrarySettings(container, plugin, onSuccess) {
@@ -1240,15 +1474,15 @@ function renderLibrarySettings(container, plugin, onSuccess) {
   const source = settingsGroup(settings, onSuccess ? void 0 : "Library source", "server");
   let localPath = plugin.localFolder;
   let serverAddress = plugin.origin;
-  let sourceType = localPath && !(onSuccess && import_obsidian3.Platform.isMobile) ? "local" : serverAddress ? "server" : "";
-  const location = new import_obsidian3.Setting(source).setName("Storage location");
+  let sourceType = localPath && !(onSuccess && import_obsidian4.Platform.isMobile) ? "local" : serverAddress ? "server" : "";
+  const location = new import_obsidian4.Setting(source).setName("Storage location");
   if (!onSuccess) location.setDesc("Choose where your books are stored.");
   const fields = source.createDiv("ol-source-fields ol-settings-divider");
   const renderSource = () => {
     fields.empty();
     if (!sourceType) return;
     const local = sourceType === "local";
-    const row = new import_obsidian3.Setting(fields).setName(local ? "PDF folder" : "Server address").setDesc(local ? "PDFs are scanned and opened in place with PDF++." : "HTTPS endpoint of your library server.");
+    const row = new import_obsidian4.Setting(fields).setName(local ? "PDF folder" : "Server address").setDesc(local ? "PDFs are scanned and opened in place with PDF++." : "HTTPS endpoint of your library server.");
     row.settingEl.addClass("ol-source-setting");
     row.addText((input) => {
       if (onSuccess) {
@@ -1269,7 +1503,7 @@ function renderLibrarySettings(container, plugin, onSuccess) {
       const setState = (state, message, detail = "", icon = "circle-alert") => {
         status.dataset.state = state;
         if (statusIcon && statusTitle && statusDetail) {
-          (0, import_obsidian3.setIcon)(statusIcon, icon);
+          (0, import_obsidian4.setIcon)(statusIcon, icon);
           statusTitle.setText(message);
           statusDetail.setText(detail);
         } else status.setText(message);
@@ -1334,7 +1568,7 @@ function renderLibrarySettings(container, plugin, onSuccess) {
       const guide = fields.createEl("details", { cls: "ol-server-guide" });
       const summary = guide.createEl("summary");
       for (const icon of onSuccess ? ["book-open"] : ["chevron-right", "chevron-down"]) {
-        (0, import_obsidian3.setIcon)(summary.createSpan({ cls: "ol-guide-" + icon, attr: { "aria-hidden": "true" } }), icon);
+        (0, import_obsidian4.setIcon)(summary.createSpan({ cls: "ol-guide-" + icon, attr: { "aria-hidden": "true" } }), icon);
       }
       summary.createSpan({ text: "Server setup guide" });
       if (onSuccess) addSourceIcon(summary, "chevron-right", "ol-source-chevron");
@@ -1342,7 +1576,7 @@ function renderLibrarySettings(container, plugin, onSuccess) {
     }
   };
   const options = [];
-  if (!import_obsidian3.Platform.isMobile) options.push(["local", "Local folder"]);
+  if (!import_obsidian4.Platform.isMobile) options.push(["local", "Local folder"]);
   options.push(["server", "Remote server"]);
   const sourceIcon = () => sourceType === "local" ? "folder" : "server";
   const changeSource = (value) => {
@@ -1350,7 +1584,7 @@ function renderLibrarySettings(container, plugin, onSuccess) {
     renderSource();
   };
   let setSourceDisabled;
-  if (!import_obsidian3.Platform.isMobile) {
+  if (!import_obsidian4.Platform.isMobile) {
     const button = location.controlEl.createEl("button", {
       cls: onSuccess ? "ol-source-select" : "ol-filter-button",
       attr: { type: "button", "aria-haspopup": "menu", "aria-expanded": "false" }
@@ -1362,7 +1596,7 @@ function renderLibrarySettings(container, plugin, onSuccess) {
       const text = options.find(([value]) => value === sourceType)?.[1] ?? "Choose a source";
       label.setText(text);
       button.setAttribute("aria-label", "Storage location: " + text);
-      if (icon) (0, import_obsidian3.setIcon)(icon, sourceIcon());
+      if (icon) (0, import_obsidian4.setIcon)(icon, sourceIcon());
     };
     updateButton();
     button.addEventListener("click", () => showChoiceMenu(button, options, sourceType, (value) => {
@@ -1384,7 +1618,7 @@ function renderLibrarySettings(container, plugin, onSuccess) {
       selector.selectEl.setAttribute("aria-label", "Storage location");
       selector.onChange((value) => {
         changeSource(value);
-        if (icon) (0, import_obsidian3.setIcon)(icon, sourceIcon());
+        if (icon) (0, import_obsidian4.setIcon)(icon, sourceIcon());
       });
       setSourceDisabled = (disabled) => {
         selector.setDisabled(disabled);
@@ -1393,6 +1627,7 @@ function renderLibrarySettings(container, plugin, onSuccess) {
   }
   renderSource();
   if (onSuccess) return;
+  renderDataStorage(settings, plugin);
   const notes = settingsGroup(settings, "Study notes", "notebook-pen");
   const appearance = settingsGroup(settings, "Appearance", "palette");
   const feedback = settings.createDiv({ cls: "ol-secondary", attr: { role: "status" } });
@@ -1405,10 +1640,10 @@ function renderLibrarySettings(container, plugin, onSuccess) {
       ));
     }, 300);
   };
-  new import_obsidian3.Setting(notes).setName("Notes folder").setDesc("Location for new study notes.").addText((input) => {
+  new import_obsidian4.Setting(notes).setName("Notes folder").setDesc("Location for new study notes.").addText((input) => {
     input.setValue(plugin.studyRoot).onChange((value) => {
       try {
-        plugin.studyRoot = studyFolder(value);
+        plugin.studyRoot = studyFolder(value, plugin.storage.root);
         feedback.setText("");
         save();
       } catch (error) {
@@ -1419,15 +1654,20 @@ function renderLibrarySettings(container, plugin, onSuccess) {
     const browse = input.inputEl.parentElement?.createEl("button", { attr: { "aria-label": "Select notes folder" } });
     if (!browse) return;
     browse.addClass("ol-settings-icon");
-    (0, import_obsidian3.setIcon)(browse, "folder");
-    (0, import_obsidian3.setTooltip)(browse, "Select notes folder");
+    (0, import_obsidian4.setIcon)(browse, "folder");
+    (0, import_obsidian4.setTooltip)(browse, "Select notes folder");
     browse.addEventListener("click", () => chooseVaultPath(plugin, true, (path) => {
+      try {
+        plugin.studyRoot = studyFolder(path, plugin.storage.root);
+      } catch (error) {
+        feedback.setText(error instanceof Error ? error.message : "Enter a vault folder.");
+        return;
+      }
       input.setValue(path);
-      plugin.studyRoot = path;
       save();
     }));
   });
-  const template = new import_obsidian3.Setting(notes).setName("Note template").setDesc("Optional Markdown template.");
+  const template = new import_obsidian4.Setting(notes).setName("Note template").setDesc("Optional Markdown template.");
   template.settingEl.addClass("ol-settings-divider");
   template.addButton((select) => {
     select.buttonEl.addClass("ol-template-select");
@@ -1436,8 +1676,8 @@ function renderLibrarySettings(container, plugin, onSuccess) {
       attr: { "aria-label": "Clear note template" }
     });
     if (clear) {
-      (0, import_obsidian3.setIcon)(clear, "x");
-      (0, import_obsidian3.setTooltip)(clear, "Clear note template");
+      (0, import_obsidian4.setIcon)(clear, "x");
+      (0, import_obsidian4.setTooltip)(clear, "Clear note template");
       clear.addEventListener("click", () => {
         plugin.studyTemplate = "";
         update();
@@ -1461,7 +1701,7 @@ function renderLibrarySettings(container, plugin, onSuccess) {
     plugin.redraw();
     save();
   };
-  const layout = new import_obsidian3.Setting(appearance).setName("Default view").setDesc("How books are displayed.");
+  const layout = new import_obsidian4.Setting(appearance).setName("Default view").setDesc("How books are displayed.");
   const segments = layout.controlEl.createDiv({ cls: "ol-layout-segments", attr: { role: "group", "aria-label": "Default view" } });
   const choices = /* @__PURE__ */ new Map();
   const sync = () => {
@@ -1469,7 +1709,7 @@ function renderLibrarySettings(container, plugin, onSuccess) {
   };
   for (const [value, label, icon] of [["grid", "Grid", "layout-grid"], ["list", "List", "list"]]) {
     const button = segments.createEl("button");
-    (0, import_obsidian3.setIcon)(button.createSpan({ attr: { "aria-hidden": "true" } }), icon);
+    (0, import_obsidian4.setIcon)(button.createSpan({ attr: { "aria-hidden": "true" } }), icon);
     button.createSpan({ text: label });
     choices.set(value, button);
     button.addEventListener("click", () => {
@@ -1479,7 +1719,7 @@ function renderLibrarySettings(container, plugin, onSuccess) {
     });
   }
   sync();
-  const coverSize = new import_obsidian3.Setting(appearance).setName("Cover size").setDesc("Adjust the size of book covers.");
+  const coverSize = new import_obsidian4.Setting(appearance).setName("Cover size").setDesc("Adjust the size of book covers.");
   coverSize.settingEl.addClass("ol-settings-divider");
   const sizeLabel = coverSize.controlEl.createSpan({ cls: "ol-cover-size-value", text: plugin.appearance.coverSize + "px" });
   coverSize.addSlider((slider) => {
@@ -1491,7 +1731,7 @@ function renderLibrarySettings(container, plugin, onSuccess) {
       changeAppearance();
     });
   });
-  const progress = new import_obsidian3.Setting(appearance).setName("Show reading progress").setDesc("Display progress below book covers.");
+  const progress = new import_obsidian4.Setting(appearance).setName("Show reading progress").setDesc("Display progress below book covers.");
   progress.settingEl.addClass("ol-settings-divider");
   progress.addToggle((toggle) => {
     toggle.toggleEl.setAttribute("aria-label", "Show reading progress");
@@ -1504,19 +1744,22 @@ function renderLibrarySettings(container, plugin, onSuccess) {
 
 // local-typescript:C:\Users\Fabricio\Documents\PluginLivrosObsidian\plugin\src\main.ts
 var LOCAL_FOLDER_KEY = "obsidian-library-local-folder";
-var LibraryPlugin = class extends import_obsidian4.Plugin {
+var LibraryPlugin = class extends import_obsidian5.Plugin {
   constructor() {
     super(...arguments);
     __publicField(this, "storage");
     __publicField(this, "origin", "");
     __publicField(this, "localFolder", "");
-    __publicField(this, "studyRoot", NOTES.slice(0, -1));
+    __publicField(this, "studyRoot", "");
     __publicField(this, "studyTemplate", "");
     __publicField(this, "appearance", { layout: "grid", coverSize: 150, showProgress: true });
     __publicField(this, "lastRefresh");
     __publicField(this, "addedAt", {});
     __publicField(this, "trackAdditions", false);
     __publicField(this, "settingsWrite", Promise.resolve());
+    __publicField(this, "migrating", false);
+    __publicField(this, "layoutReady", false);
+    __publicField(this, "dataMigration");
     __publicField(this, "books", []);
     __publicField(this, "connected", false);
     __publicField(this, "error", "");
@@ -1535,7 +1778,11 @@ var LibraryPlugin = class extends import_obsidian4.Plugin {
     __publicField(this, "savingViewerPage", false);
   }
   async onload() {
-    this.storage = new LibraryStorage(this.app);
+    const settings = await this.loadData();
+    this.dataMigration = pendingMigration(this.app);
+    const root = this.dataMigration?.from ?? (typeof settings?.dataRoot === "string" ? studyFolder(settings.dataRoot) : void 0);
+    this.storage = new LibraryStorage(this.app, root, this.dataMigration?.legacy ?? settings?.legacyDataLayout);
+    this.studyRoot = this.storage.notesPath.slice(0, -1);
     const added = this.app.loadLocalStorage("obsidian-library-first-seen");
     if (added && typeof added === "object") {
       for (const [id, date] of Object.entries(added)) {
@@ -1543,7 +1790,6 @@ var LibraryPlugin = class extends import_obsidian4.Plugin {
       }
     }
     this.trackAdditions = true;
-    const settings = await this.loadData();
     if (settings?.appearance?.layout === "list") this.appearance.layout = "list";
     const coverSize = settings?.appearance?.coverSize;
     if (typeof coverSize === "number" && coverSize >= 110 && coverSize <= 220) this.appearance.coverSize = coverSize;
@@ -1562,7 +1808,10 @@ var LibraryPlugin = class extends import_obsidian4.Plugin {
     this.deviceId = typeof stored === "string" && idPattern.test(stored) ? stored : crypto.randomUUID();
     this.app.saveLocalStorage(key, this.deviceId);
     const localFolder = this.app.loadLocalStorage(LOCAL_FOLDER_KEY);
-    if (!import_obsidian4.Platform.isMobile && typeof localFolder === "string") this.localFolder = localFolder;
+    if (!import_obsidian5.Platform.isMobile && typeof localFolder === "string") this.localFolder = localFolder;
+    if (this.dataMigration) {
+      await this.run(() => this.changeDataFolder(this.dataMigration.to, async () => true));
+    }
     this.registerView(VIEW, (leaf) => new LibraryView(leaf, this));
     this.registerView(DETAILS_VIEW, (leaf) => new BookDetailsView(leaf));
     this.addRibbonIcon("library", "Open library", () => void this.run(() => this.openLibrary()));
@@ -1588,13 +1837,15 @@ var LibraryPlugin = class extends import_obsidian4.Plugin {
     this.addSettingTab(new LibrarySettings(this));
     this.app.workspace.onLayoutReady(() => {
       if (this.stopped) return;
+      this.layoutReady = true;
       this.registerInterval(window.setInterval(() => void this.run(() => this.saveViewerPage()), 1e3));
       const update = (path) => {
-        if (!path.startsWith(STATE + "/")) return;
-        this.snapshotDirty || (this.snapshotDirty = path === SNAPSHOT);
-        this.referencesDirty || (this.referencesDirty = path.startsWith(PERSONAL));
+        if (this.dataMigration || this.migrating || !path.startsWith(this.storage.statePath + "/")) return;
+        this.snapshotDirty || (this.snapshotDirty = path === this.storage.snapshotPath);
+        this.referencesDirty || (this.referencesDirty = path.startsWith(this.storage.personalPath));
         window.clearTimeout(this.reloadTimer);
         this.reloadTimer = window.setTimeout(() => {
+          if (this.migrating || this.dataMigration) return;
           const dirty = this.snapshotDirty;
           const referencesDirty = this.referencesDirty;
           this.snapshotDirty = false;
@@ -1608,7 +1859,7 @@ var LibraryPlugin = class extends import_obsidian4.Plugin {
       };
       this.registerEvent(this.app.metadataCache.on("changed", (file) => update(file.path)));
       this.registerEvent(this.app.metadataCache.on("resolve", (file) => {
-        if (!file.path.startsWith(STATE + "/")) this.redrawDetails();
+        if (!file.path.startsWith(this.storage.statePath + "/")) this.redrawDetails();
       }));
       this.registerEvent(this.app.vault.on("delete", (file) => {
         update(file.path);
@@ -1634,11 +1885,11 @@ var LibraryPlugin = class extends import_obsidian4.Plugin {
     try {
       await action();
     } catch (error) {
-      if (!this.stopped) new import_obsidian4.Notice(error instanceof Error ? error.message : "Could not complete the operation.");
+      if (!this.stopped) new import_obsidian5.Notice(error instanceof Error ? error.message : "Could not complete the operation.");
     }
   }
   async loadSnapshot() {
-    if (this.localFolder) return;
+    if (this.localFolder || this.dataMigration) return;
     try {
       const state = await this.storage.snapshot();
       if (this.stopped || this.localFolder) return;
@@ -1672,7 +1923,7 @@ var LibraryPlugin = class extends import_obsidian4.Plugin {
     void this.regenerateReferences();
   }
   async regenerateReferences() {
-    if (this.generatingReferences) return;
+    if (this.generatingReferences || this.migrating || this.dataMigration) return;
     this.generatingReferences = true;
     try {
       let source;
@@ -1682,7 +1933,7 @@ var LibraryPlugin = class extends import_obsidian4.Plugin {
         const personals = this.storage.personals();
         failed = false;
         for (const [index, book] of source.entries()) {
-          if (this.stopped || source !== this.books) break;
+          if (this.stopped || this.migrating || this.dataMigration || source !== this.books) break;
           if (book.source === "local") continue;
           try {
             await this.storage.ensureReference(book);
@@ -1694,13 +1945,13 @@ var LibraryPlugin = class extends import_obsidian4.Plugin {
           if (index % 20 === 0) await new Promise((resolve) => window.setTimeout(resolve, 0));
         }
       } while (!this.stopped && source !== this.books);
-      if (failed && !this.stopped) new import_obsidian4.Notice("Some PDF references need attention. Open the book to see the error.");
+      if (failed && !this.stopped) new import_obsidian5.Notice("Some PDF references need attention. Open the book to see the error.");
     } finally {
       this.generatingReferences = false;
     }
   }
   refresh() {
-    if (this.changingSource || !this.localFolder && !this.origin) return Promise.resolve();
+    if (this.migrating || this.dataMigration || this.changingSource || !this.localFolder && !this.origin) return Promise.resolve();
     const folder = this.localFolder;
     return this.refreshTask ?? (this.refreshTask = (folder ? this.refreshLocal(folder) : this.refreshCatalog(this.origin)).finally(() => {
       this.refreshTask = void 0;
@@ -1725,8 +1976,8 @@ var LibraryPlugin = class extends import_obsidian4.Plugin {
     }
   }
   async useLocalFolder(value) {
-    if (import_obsidian4.Platform.isMobile) throw new Error("Local folders are available on desktop.");
-    if (this.changingSource) throw new Error("Wait for the current source change to finish.");
+    if (import_obsidian5.Platform.isMobile) throw new Error("Local folders are available on desktop.");
+    if (this.migrating || this.dataMigration || this.changingSource) throw new Error("Finish the current library change first.");
     this.changingSource = true;
     try {
       await this.refreshTask;
@@ -1757,7 +2008,7 @@ var LibraryPlugin = class extends import_obsidian4.Plugin {
       this.applyCatalog(origin, state);
       this.connected = true;
       this.lastRefresh = /* @__PURE__ */ new Date();
-      if (this.snapshotSaved) return;
+      if (this.snapshotSaved || this.migrating || this.dataMigration) return;
       try {
         await this.storage.saveSnapshot({ schema: 1, origin, ...state });
         this.snapshotSaved = true;
@@ -1775,7 +2026,7 @@ var LibraryPlugin = class extends import_obsidian4.Plugin {
   }
   async connect(value) {
     const origin = endpoint(value);
-    if (this.changingSource) throw new Error("Wait for the current source change to finish.");
+    if (this.migrating || this.dataMigration || this.changingSource) throw new Error("Finish the current library change first.");
     this.changingSource = true;
     try {
       await this.refreshTask;
@@ -1819,9 +2070,10 @@ var LibraryPlugin = class extends import_obsidian4.Plugin {
     const path = this.app.workspace.getActiveFile()?.path;
     if (!path?.endsWith(".pdf")) return;
     const personals = this.storage.personals();
-    return this.books.find((book) => referencePath(book.id) === path || this.storage.folderReference(personals.get(book.id)) === path);
+    return this.books.find((book) => this.storage.referencePath(book.id) === path || this.storage.folderReference(personals.get(book.id)) === path);
   }
   async saveViewerPage() {
+    if (this.migrating || this.dataMigration) return;
     const path = this.app.workspace.getActiveFile()?.path;
     if (!path?.endsWith(".pdf")) return;
     const pdfPlus = window.pdfPlus?.lib;
@@ -1899,7 +2151,7 @@ var LibraryPlugin = class extends import_obsidian4.Plugin {
       } catch {
         await leaf.openFile(file, { active: true });
       }
-      new import_obsidian4.Notice("Saved page: " + page);
+      new import_obsidian5.Notice("Saved page: " + page);
     } else {
       await leaf.openFile(file, { active: true });
     }
@@ -1911,8 +2163,8 @@ var LibraryPlugin = class extends import_obsidian4.Plugin {
   }
   async copyLink(book) {
     await this.storage.ensureReference(book);
-    await navigator.clipboard.writeText("[[" + referencePath(book.id) + "]]");
-    new import_obsidian4.Notice("Reference copied.");
+    await navigator.clipboard.writeText("[[" + this.storage.referencePath(book.id) + "]]");
+    new import_obsidian5.Notice("Reference copied.");
   }
   async record(book, page, completed, heads) {
     if (!Number.isSafeInteger(page) || page < 1 || book.pageCount && page > book.pageCount) {
@@ -1933,7 +2185,7 @@ var LibraryPlugin = class extends import_obsidian4.Plugin {
   }
   async linkFolder(book, path) {
     await this.storage.linkFolder(book, path);
-    new import_obsidian4.Notice("Folder linked to the book.");
+    new import_obsidian5.Notice("Folder linked to the book.");
   }
   async deleteFromLibrary(book) {
     await this.storage.deleteFromLibrary(book);
@@ -1943,23 +2195,65 @@ var LibraryPlugin = class extends import_obsidian4.Plugin {
     const ficha = await this.storage.note(book, this.studyRoot);
     const note = await this.storage.createStudyNote(book, ficha, title, this.studyTemplate);
     let pdfLeaf;
-    if (!import_obsidian4.Platform.isMobile && book.availability === "available") {
+    if (!import_obsidian5.Platform.isMobile && book.availability === "available") {
       try {
         pdfLeaf = await this.openPDF(book, page);
       } catch (error) {
-        new import_obsidian4.Notice(error instanceof Error ? error.message : "Could not open the PDF alongside the note.");
+        new import_obsidian5.Notice(error instanceof Error ? error.message : "Could not open the PDF alongside the note.");
       }
     }
     const noteLeaf = pdfLeaf ? this.app.workspace.createLeafBySplit(pdfLeaf, "vertical") : this.app.workspace.getLeaf("tab");
     await noteLeaf.openFile(note, { active: true });
   }
+  async changeDataFolder(input, confirm) {
+    if (this.migrating || this.changingSource) throw new Error("Finish the current library change first.");
+    this.migrating = true;
+    let committed = false;
+    try {
+      await this.storage.pauseWrites();
+      if (!this.dataMigration) {
+        await this.refreshTask;
+        const migration2 = await planMigration(this.storage, this.app, input);
+        if (!migration2) return true;
+        if (Object.values(migration2.moves).some((move) => move.phase !== "absent") && !await confirm(migration2.from, migration2.to)) return false;
+        saveMigration(this.app, migration2);
+        this.dataMigration = migration2;
+      }
+      const migration = this.dataMigration;
+      await moveLibraryData(this.app, this.storage, migration);
+      const destination = new LibraryStorage(this.app, migration.to, migration.legacy);
+      await this.persistSettings(void 0, destination);
+      saveMigration(this.app, null);
+      this.storage = destination;
+      this.dataMigration = void 0;
+      committed = true;
+      return true;
+    } finally {
+      this.migrating = false;
+      if (!this.dataMigration) this.storage.resumeWrites();
+      if (committed && this.layoutReady && !this.stopped) {
+        this.redraw();
+        void this.run(async () => {
+          await this.loadSnapshot();
+          void this.regenerateReferences();
+          if (!this.books.length || !this.localFolder && !this.snapshotSaved) await this.refresh();
+        });
+      }
+    }
+  }
   saveSettings(origin) {
+    if (this.dataMigration) return Promise.reject(new Error("Finish the data folder migration before saving settings."));
+    return this.persistSettings(origin, this.storage);
+  }
+  persistSettings(origin, storage) {
     const write = this.settingsWrite.then(async () => {
       await this.saveData({
         origin: origin ?? this.origin,
         studyRoot: this.studyRoot,
         studyTemplate: this.studyTemplate,
-        appearance: this.appearance
+        appearance: this.appearance,
+        dataRoot: storage.root,
+        legacyDataLayout: storage.legacy
       });
       if (origin !== void 0) this.origin = origin;
     });
@@ -1968,7 +2262,7 @@ var LibraryPlugin = class extends import_obsidian4.Plugin {
     return write;
   }
 };
-var LibrarySettings = class extends import_obsidian4.PluginSettingTab {
+var LibrarySettings = class extends import_obsidian5.PluginSettingTab {
   constructor(library) {
     super(library.app, library);
     this.library = library;

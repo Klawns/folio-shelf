@@ -75,7 +75,7 @@ it("saves a settled PDF++ page once and preserves progress when the reader reope
 	const progress = vi.fn().mockReturnValue(new Map());
 	Object.assign(library, {
 		app: { workspace: { getActiveFile: () => file } },
-		storage: { personals: () => new Map(), progress, saveProgress },
+		storage: { personals: () => new Map(), progress, saveProgress, referencePath },
 		books: [{ id, pageCount: 400 }],
 	});
 	const sample = () => (library as unknown as { saveViewerPage(): Promise<void> }).saveViewerPage();

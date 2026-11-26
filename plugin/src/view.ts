@@ -752,6 +752,77 @@ function chooseVaultPath(plugin: LibraryPlugin, folders: boolean, onSelect: (pat
 	picker.open();
 }
 
+function confirmDataMove(plugin: LibraryPlugin, from: string, to: string): Promise<boolean> {
+	return new Promise(resolve => {
+		const modal = new Modal(plugin.app);
+		modal.setTitle("Move library data?");
+		modal.contentEl.createEl("p", { text: "From " + from + "/" });
+		modal.contentEl.createEl("p", { text: "To " + to + "/" });
+		modal.contentEl.createEl("p", { text: "Pause Fast Note Sync on all devices before moving the data." });
+		new Setting(modal.contentEl)
+			.addButton(button => button.setButtonText("Cancel").onClick(() => modal.close()))
+			.addButton(button => button.setButtonText("Move data").setCta().onClick(() => {
+				resolve(true);
+				modal.close();
+			}));
+		modal.onClose = () => resolve(false);
+		modal.open();
+	});
+}
+
+function renderDataStorage(settings: HTMLElement, plugin: LibraryPlugin): void {
+	const group = settingsGroup(settings, "Data storage", "database");
+	const row = new Setting(group).setName("Library data folder")
+		.setDesc("Choose where the library stores its catalog, reading progress, and PDF references.");
+	const feedback = group.createDiv({ cls: "ol-secondary", attr: { role: "status" } });
+	let path = plugin.dataMigration?.to ?? plugin.storage.root;
+	let field: HTMLInputElement;
+	let browse: HTMLButtonElement | undefined;
+	const update = () => {
+		const pending = plugin.dataMigration;
+		field.disabled = !!pending;
+		if (browse) browse.disabled = !!pending;
+		if (pending) feedback.setText("Current folder: " + pending.from + "/. Select Apply to resume the move to " + pending.to + "/.");
+	};
+	row.addText(input => {
+		input.setValue(path).onChange(value => { path = value; });
+		field = input.inputEl;
+		field.setAttribute("aria-label", "Library data folder");
+		browse = field.parentElement?.createEl("button", {
+			cls: "ol-settings-icon", attr: { type: "button", "aria-label": "Select library data folder" },
+		});
+		if (!browse) return;
+		setIcon(browse, "folder");
+		setTooltip(browse, "Select library data folder");
+		browse.addEventListener("click", () => chooseVaultPath(plugin, true, selected => {
+			path = selected;
+			input.setValue(selected);
+		}));
+	});
+	update();
+	row.addButton(button => {
+		button.setButtonText("Apply");
+		button.onClick(async () => {
+			button.setDisabled(true);
+			field.disabled = true;
+			if (browse) browse.disabled = true;
+			try {
+				if (await plugin.changeDataFolder(path, (from, to) => confirmDataMove(plugin, from, to))) {
+					path = plugin.storage.root;
+					field.value = path;
+					feedback.setText("Library data folder: " + path + "/");
+				}
+			} catch (error) {
+				update();
+				feedback.setText(error instanceof Error ? error.message : "Could not change the library data folder.");
+			} finally {
+				if (!plugin.dataMigration) update();
+				button.setDisabled(false);
+			}
+		});
+	});
+}
+
 function settingsGroup(parent: HTMLElement, title?: string, icon?: string): HTMLElement {
 	const section = parent.createEl("section", { cls: "ol-settings-section" });
 	if (title && icon) {
@@ -938,6 +1009,7 @@ export function renderLibrarySettings(container: HTMLElement, plugin: LibraryPlu
 	renderSource();
 	if (onSuccess) return;
 
+	renderDataStorage(settings, plugin);
 	const notes = settingsGroup(settings, "Study notes", "notebook-pen");
 	const appearance = settingsGroup(settings, "Appearance", "palette");
 	const feedback = settings.createDiv({ cls: "ol-secondary", attr: { role: "status" } });
@@ -953,7 +1025,7 @@ export function renderLibrarySettings(container: HTMLElement, plugin: LibraryPlu
 		.addText(input => {
 			input.setValue(plugin.studyRoot).onChange(value => {
 				try {
-					plugin.studyRoot = studyFolder(value);
+					plugin.studyRoot = studyFolder(value, plugin.storage.root);
 					feedback.setText("");
 					save();
 				} catch (error) {
@@ -967,8 +1039,13 @@ export function renderLibrarySettings(container: HTMLElement, plugin: LibraryPlu
 			setIcon(browse, "folder");
 			setTooltip(browse, "Select notes folder");
 			browse.addEventListener("click", () => chooseVaultPath(plugin, true, path => {
+				try {
+					plugin.studyRoot = studyFolder(path, plugin.storage.root);
+				} catch (error) {
+					feedback.setText(error instanceof Error ? error.message : "Enter a vault folder.");
+					return;
+				}
 				input.setValue(path);
-				plugin.studyRoot = path;
 				save();
 			}));
 		});

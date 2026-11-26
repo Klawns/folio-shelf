@@ -1,6 +1,7 @@
 import { Notice, Platform, Plugin, PluginSettingTab, WorkspaceLeaf } from "obsidian";
+import { DataMigration, moveLibraryData, pendingMigration, planMigration, saveMigration } from "./migration";
 import { checkLocalPDF, scanLocalFolder } from "./local";
-import { Book, NOTES, PERSONAL, Progress, SNAPSHOT, STATE, endpoint, hasConflict, idPattern, progressHeads, referencePath } from "./model";
+import { Book, Progress, endpoint, hasConflict, idPattern, progressHeads, studyFolder } from "./model";
 import { checkPDF, checkServer, fetchCatalog } from "./remote";
 import { LibraryStorage, Personal } from "./storage";
 import { BookDetailsView, DETAILS_VIEW, LibraryView, VIEW, renderLibrarySettings } from "./view";
@@ -26,13 +27,16 @@ export default class LibraryPlugin extends Plugin {
 	storage!: LibraryStorage;
 	origin = "";
 	localFolder = "";
-	studyRoot = NOTES.slice(0, -1);
+	studyRoot = "";
 	studyTemplate = "";
 	appearance = { layout: "grid" as "grid" | "list", coverSize: 150, showProgress: true };
 	lastRefresh?: Date;
 	addedAt: Record<string, number> = {};
 	private trackAdditions = false;
 	private settingsWrite = Promise.resolve();
+	private migrating = false;
+	private layoutReady = false;
+	dataMigration?: DataMigration;
 	books: Book[] = [];
 	connected = false;
 	error = "";
@@ -51,7 +55,12 @@ export default class LibraryPlugin extends Plugin {
 	private savingViewerPage = false;
 
 	async onload(): Promise<void> {
-		this.storage = new LibraryStorage(this.app);
+		const settings = await this.loadData();
+		this.dataMigration = pendingMigration(this.app);
+		const root = this.dataMigration?.from
+			?? (typeof settings?.dataRoot === "string" ? studyFolder(settings.dataRoot) : undefined);
+		this.storage = new LibraryStorage(this.app, root, this.dataMigration?.legacy ?? settings?.legacyDataLayout);
+		this.studyRoot = this.storage.notesPath.slice(0, -1);
 		const added: unknown = this.app.loadLocalStorage("obsidian-library-first-seen");
 		if (added && typeof added === "object") {
 			for (const [id, date] of Object.entries(added)) {
@@ -59,7 +68,6 @@ export default class LibraryPlugin extends Plugin {
 			}
 		}
 		this.trackAdditions = true;
-		const settings = await this.loadData();
 		if (settings?.appearance?.layout === "list") this.appearance.layout = "list";
 		const coverSize = settings?.appearance?.coverSize;
 		if (typeof coverSize === "number" && coverSize >= 110 && coverSize <= 220) this.appearance.coverSize = coverSize;
@@ -75,6 +83,9 @@ export default class LibraryPlugin extends Plugin {
 		this.app.saveLocalStorage(key, this.deviceId);
 		const localFolder: unknown = this.app.loadLocalStorage(LOCAL_FOLDER_KEY);
 		if (!Platform.isMobile && typeof localFolder === "string") this.localFolder = localFolder;
+		if (this.dataMigration) {
+			await this.run(() => this.changeDataFolder(this.dataMigration!.to, async () => true));
+		}
 		this.registerView(VIEW, leaf => new LibraryView(leaf, this));
 		this.registerView(DETAILS_VIEW, leaf => new BookDetailsView(leaf));
 		this.addRibbonIcon("library", "Open library", () => void this.run(() => this.openLibrary()));
@@ -100,13 +111,15 @@ export default class LibraryPlugin extends Plugin {
 		this.addSettingTab(new LibrarySettings(this));
 		this.app.workspace.onLayoutReady(() => {
 			if (this.stopped) return;
+			this.layoutReady = true;
 			this.registerInterval(window.setInterval(() => void this.run(() => this.saveViewerPage()), 1000));
 			const update = (path: string) => {
-				if (!path.startsWith(STATE + "/")) return;
-				this.snapshotDirty ||= path === SNAPSHOT;
-				this.referencesDirty ||= path.startsWith(PERSONAL);
+				if (this.dataMigration || this.migrating || !path.startsWith(this.storage.statePath + "/")) return;
+				this.snapshotDirty ||= path === this.storage.snapshotPath;
+				this.referencesDirty ||= path.startsWith(this.storage.personalPath);
 				window.clearTimeout(this.reloadTimer);
 				this.reloadTimer = window.setTimeout(() => {
+					if (this.migrating || this.dataMigration) return;
 					const dirty = this.snapshotDirty;
 					const referencesDirty = this.referencesDirty;
 					this.snapshotDirty = false;
@@ -120,7 +133,7 @@ export default class LibraryPlugin extends Plugin {
 			};
 			this.registerEvent(this.app.metadataCache.on("changed", file => update(file.path)));
 			this.registerEvent(this.app.metadataCache.on("resolve", file => {
-				if (!file.path.startsWith(STATE + "/")) this.redrawDetails();
+				if (!file.path.startsWith(this.storage.statePath + "/")) this.redrawDetails();
 			}));
 			this.registerEvent(this.app.vault.on("delete", file => {
 				update(file.path);
@@ -153,7 +166,7 @@ export default class LibraryPlugin extends Plugin {
 	}
 
 	private async loadSnapshot(): Promise<void> {
-		if (this.localFolder) return;
+		if (this.localFolder || this.dataMigration) return;
 		try {
 			const state = await this.storage.snapshot();
 			if (this.stopped || this.localFolder) return;
@@ -191,7 +204,7 @@ export default class LibraryPlugin extends Plugin {
 	}
 
 	private async regenerateReferences(): Promise<void> {
-		if (this.generatingReferences) return;
+		if (this.generatingReferences || this.migrating || this.dataMigration) return;
 		this.generatingReferences = true;
 		try {
 			let source: Book[];
@@ -201,7 +214,7 @@ export default class LibraryPlugin extends Plugin {
 				const personals = this.storage.personals();
 				failed = false;
 				for (const [index, book] of source.entries()) {
-					if (this.stopped || source !== this.books) break;
+					if (this.stopped || this.migrating || this.dataMigration || source !== this.books) break;
 					if (book.source === "local") continue;
 					try {
 						await this.storage.ensureReference(book);
@@ -218,7 +231,7 @@ export default class LibraryPlugin extends Plugin {
 	}
 
 	refresh(): Promise<void> {
-		if (this.changingSource || (!this.localFolder && !this.origin)) return Promise.resolve();
+		if (this.migrating || this.dataMigration || this.changingSource || (!this.localFolder && !this.origin)) return Promise.resolve();
 		const folder = this.localFolder;
 		return this.refreshTask ??= (folder ? this.refreshLocal(folder) : this.refreshCatalog(this.origin)).finally(() => {
 			this.refreshTask = undefined;
@@ -246,7 +259,7 @@ export default class LibraryPlugin extends Plugin {
 
 	async useLocalFolder(value: string): Promise<void> {
 		if (Platform.isMobile) throw new Error("Local folders are available on desktop.");
-		if (this.changingSource) throw new Error("Wait for the current source change to finish.");
+		if (this.migrating || this.dataMigration || this.changingSource) throw new Error("Finish the current library change first.");
 		this.changingSource = true;
 		try {
 			await this.refreshTask;
@@ -280,7 +293,7 @@ export default class LibraryPlugin extends Plugin {
 			this.applyCatalog(origin, state);
 			this.connected = true;
 			this.lastRefresh = new Date();
-			if (this.snapshotSaved) return;
+			if (this.snapshotSaved || this.migrating || this.dataMigration) return;
 			try {
 				await this.storage.saveSnapshot({ schema: 1, origin, ...state });
 				this.snapshotSaved = true;
@@ -299,7 +312,7 @@ export default class LibraryPlugin extends Plugin {
 
 	async connect(value: string): Promise<void> {
 		const origin = endpoint(value);
-		if (this.changingSource) throw new Error("Wait for the current source change to finish.");
+		if (this.migrating || this.dataMigration || this.changingSource) throw new Error("Finish the current library change first.");
 		this.changingSource = true;
 		try {
 			await this.refreshTask;
@@ -348,11 +361,12 @@ export default class LibraryPlugin extends Plugin {
 		const path = this.app.workspace.getActiveFile()?.path;
 		if (!path?.endsWith(".pdf")) return;
 		const personals = this.storage.personals();
-		return this.books.find(book => referencePath(book.id) === path
+		return this.books.find(book => this.storage.referencePath(book.id) === path
 			|| this.storage.folderReference(personals.get(book.id)) === path);
 	}
 
 	private async saveViewerPage(): Promise<void> {
+		if (this.migrating || this.dataMigration) return;
 		const path = this.app.workspace.getActiveFile()?.path;
 		if (!path?.endsWith(".pdf")) return;
 		const pdfPlus = (window as Window & { pdfPlus?: { lib?: {
@@ -454,7 +468,7 @@ export default class LibraryPlugin extends Plugin {
 
 	async copyLink(book: Book): Promise<void> {
 		await this.storage.ensureReference(book);
-		await navigator.clipboard.writeText("[[" + referencePath(book.id) + "]]");
+		await navigator.clipboard.writeText("[[" + this.storage.referencePath(book.id) + "]]");
 		new Notice("Reference copied.");
 	}
 
@@ -497,11 +511,55 @@ export default class LibraryPlugin extends Plugin {
 		await noteLeaf.openFile(note, { active: true });
 	}
 
+	async changeDataFolder(input: string, confirm: (from: string, to: string) => Promise<boolean>): Promise<boolean> {
+		if (this.migrating || this.changingSource) throw new Error("Finish the current library change first.");
+		this.migrating = true;
+		let committed = false;
+		try {
+			await this.storage.pauseWrites();
+			if (!this.dataMigration) {
+				await this.refreshTask;
+				const migration = await planMigration(this.storage, this.app, input);
+				if (!migration) return true;
+				if (Object.values(migration.moves).some(move => move.phase !== "absent")
+					&& !await confirm(migration.from, migration.to)) return false;
+				saveMigration(this.app, migration);
+				this.dataMigration = migration;
+			}
+			const migration = this.dataMigration;
+			await moveLibraryData(this.app, this.storage, migration);
+			const destination = new LibraryStorage(this.app, migration.to, migration.legacy);
+			await this.persistSettings(undefined, destination);
+			saveMigration(this.app, null);
+			this.storage = destination;
+			this.dataMigration = undefined;
+			committed = true;
+			return true;
+		} finally {
+			this.migrating = false;
+			if (!this.dataMigration) this.storage.resumeWrites();
+			if (committed && this.layoutReady && !this.stopped) {
+				this.redraw();
+				void this.run(async () => {
+					await this.loadSnapshot();
+					void this.regenerateReferences();
+					if (!this.books.length || (!this.localFolder && !this.snapshotSaved)) await this.refresh();
+				});
+			}
+		}
+	}
+
 	saveSettings(origin?: string): Promise<void> {
+		if (this.dataMigration) return Promise.reject(new Error("Finish the data folder migration before saving settings."));
+		return this.persistSettings(origin, this.storage);
+	}
+
+	private persistSettings(origin: string | undefined, storage: LibraryStorage): Promise<void> {
 		const write = this.settingsWrite.then(async () => {
 			await this.saveData({
 				origin: origin ?? this.origin, studyRoot: this.studyRoot,
 				studyTemplate: this.studyTemplate, appearance: this.appearance,
+				dataRoot: storage.root, legacyDataLayout: storage.legacy,
 			});
 			if (origin !== undefined) this.origin = origin;
 		});
