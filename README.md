@@ -1,72 +1,55 @@
-﻿# Obsidian Library
+# Obsidian Library
 
-A personal PDF library inside Obsidian. Open books from a folder on your desktop or from a computer running the Obsidian Library server. PDF++ opens the PDFs, and the vault stores notes, lightweight references, and reading progress.
+Browse your PDF collection in Obsidian, resume reading from your last saved page, and keep study notes linked to your books. Your PDFs stay in a folder on your desktop or on a server you run.
 
-[Product requirements](PRD_Obsidian_Library.md) · [Technical decisions](DECISOES_TECNICAS.md) · [Windows, iPhone, and Raspberry Pi validation](docs/VALIDACAO.md)
+![Obsidian Library desktop catalog with search, filters, and reading progress](docs/images/desktop-shots.png)
 
-## Deploy on Raspberry Pi with Docker
+[Desktop reading progress and book grid](docs/images/desktop-reading.png)
 
-1. Check the system architecture with `uname -m`. The multi-stage Dockerfile builds the Go service for the Docker architecture and packages it with Poppler in an Alpine image. The deployment targets Linux ARMv7 and ARM64.
-2. Copy `.env.example` to `.env` in the project root. Set `LIBRARY_BOOKS_DIR` to the PDF directory on the external disk and `LIBRARY_PUBLIC_URL` to the private HTTPS origin of the Pi. Create an empty `.obsidian-library` file in the PDF directory on the mounted disk. This marker protects the index when the disk is unavailable.
-3. Create `LIBRARY_STATE_DIR` on the Pi. Use a UID and GID that can read the books and write to the state directory. Compose defaults to `10001:10001`. Back up `catalog.json` because it contains the book IDs used by vault notes.
-4. Run `docker compose up -d --build` and monitor `docker compose logs -f obsidian-library`. The first scan hashes files with one worker. The container uses the Linux host network, and the service listens on `127.0.0.1:8091`. After remounting the disk, run `docker compose up -d --force-recreate` to refresh the bind mount.
-5. Use a private Tailscale Serve route to forward HTTPS to the service. Check `tailscale serve status` first. If the host has no existing route, run `tailscale serve --bg http://127.0.0.1:8091`. Check the tailnet policy and open `/health` on both authorized devices.
-6. If the WebView requires CORS, set `LIBRARY_PDF_ORIGIN` to the exact origins observed during validation, separated by commas, then run `docker compose up -d`.
+## Features
 
-### Deploy with systemd
+- **Browse your library.** Search by title or author, filter by category or reading status, and switch between grid and list views.
+- **Resume reading.** Return to your saved page, confirm it manually, or mark a book finished.
+- **Organize books.** Add favorites, edit titles and categories, or hide books from the catalog.
+- **Take study notes.** Link books to vault folders and create Markdown notes from an optional template.
+- **See metadata and covers.** In server mode, use PDF metadata, generated covers, or your own cover images.
 
-In `server/`, use Go 1.25 or newer. For ARMv7, build with `CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -trimpath -o obsidian-library .`. For ARM64, set `GOARCH=arm64` and omit `GOARM`. In PowerShell, set environment variables with syntax such as `$env:GOOS = 'linux'` before building.
+## Installation
 
-Install the binary at `/usr/local/bin/obsidian-library`. Create an `obsidian-library` system user and group with read access to the books and the marker. Copy `server/.env.example` to `/etc/obsidian-library.env`, edit it, and install `server/obsidian-library.service` in `/etc/systemd/system/`. Run `sudo systemctl daemon-reload` and `sudo systemctl enable --now obsidian-library`. Read logs with `journalctl -u obsidian-library`.
+The manifest declares Obsidian **1.8.0** or later. Install [PDF++](https://github.com/RyotaUshio/obsidian-pdf-plus) from **Settings → Community plugins**, enable it, and turn on its external PDF support.
 
-## Install and update the plugin
+Once the plugin is listed, search for **Obsidian Library** in **Community plugins**, then select **Install** and **Enable**.
 
-Once a release is published, install **BRAT** from Obsidian's Community plugins. In BRAT, choose **Add Beta plugin**, enter `Klawns/obsidian-library-plugin`, and select **Latest version**. Add the repository on each device where you want BRAT to manage updates. You can also download the ZIP from [GitHub Releases](https://github.com/Klawns/obsidian-library-plugin/releases).
+### Manual installation
 
-Use `dist/obsidian-library-plugin.zip` or build from source. With Node.js 22.12 or newer, run `npm ci`, `npm test`, and `npm run build` in `plugin/`.
+1. Download the ZIP from [GitHub Releases](https://github.com/Klawns/obsidian-library-plugin/releases) or [build from source](docs/development.md).
+2. Copy `manifest.json`, `main.js`, and `styles.css` into `.obsidian/plugins/obsidian-library/` inside your vault.
+3. Reload Obsidian and enable **Obsidian Library** under **Settings → Community plugins**.
 
-Copy `manifest.json`, `main.js`, and `styles.css` to `.obsidian/plugins/obsidian-library/` in the vault. On iPhone, transfer the same three files to the corresponding mobile vault folder. Restart Obsidian if the plugin does not appear. Enable **Obsidian Library**, **PDF++**, and **Fast Note Sync**, then enable external PDFs in PDF++.
+## Getting started
 
-Open the library from the ribbon or with **Open library**. Click **Set up library** and choose where your books are stored.
+1. Run **Obsidian Library: Open library** from the command palette or select the library icon in the ribbon.
+2. Choose **Set up library**. On desktop, select **Local folder**, enter the full path to your PDF folder, and select **Load books**. For mobile or shared access, follow the [server setup guide](docs/server-setup.md), then select **Remote server**, enter its HTTPS address, and select **Test connection**.
+3. Open a book. Select **New note** to create a study note, or use **⋯ → Link folder…** to associate the book with a vault folder.
+4. Select **Refresh** after adding PDFs. Remote books appear after the server indexes them.
 
-- **This device** (desktop only). Paste the full path to the folder, such as `C:\Books` or `/Users/you/Books`, then click **Load books**. The plugin includes PDFs in subfolders and leaves the original files where they are. Enable external PDFs in PDF++ to open them in Obsidian. The source folder is saved on the current device. PDF++ references use absolute paths and can resolve on another device only if the same path is accessible there.
-- **Another computer or server**. Run the Obsidian Library server on a computer that can read your PDF folder, then enter its HTTPS address and click **Test and connect**. Devices that can reach that address can browse and read the library.
+## Integrations
 
-Use **Refresh** to rescan the active folder or update the server catalog. Set the default notes folder and optional template separately under **Study notes**.
+- **PDF++** opens the external PDF references and provides the viewer used to capture reading progress.
+- **Fast Note Sync** is optional. Sync Markdown under your [library data folder](docs/configuration.md#data-storage) and any linked study folders to share the remote catalog, reading progress, preferences for individual books, and notes.
 
-### Publish an update
+## Privacy and security
 
-Push or merge plugin changes into `main`. GitHub Actions takes the greater of the source version and the latest version tag, increments its patch number in the build, runs the tests, and publishes the matching tag, release, and assets. The generated version is recorded in the release and its manifest. Check progress under **Actions → Release Obsidian plugin**.
+Local mode reads the selected PDF folder. Remote mode contacts your configured HTTPS server for health checks, the catalog, covers, and PDFs. The plugin contains no telemetry code.
 
-After publication, run the BRAT command to check for plugin updates in Obsidian, or enable automatic plugin updates in BRAT settings. Repeat on each device you configured with BRAT.
+Obsidian stores plugin preferences and the server address in plugin data. The selected local folder and device identifier are kept in device-local storage. Vault files can contain book metadata, reading history, and references with absolute file paths or server URLs. Syncing those files shares that information with the configured sync destination.
 
-Update the Raspberry Pi service using the deployment steps above when a change requires it.
+The server has no built-in authentication. Restrict access to trusted devices using a private network or an access-controlled proxy.
 
-## Read and sync
+## Documentation
 
-- Use **⋯ → Link folder…** and enter a vault-relative path such as `Studies/Networking/Book`. The plugin puts the PDF reference in `Files/` and the book record in `Notes/`. Relinking a legacy folder moves the recognized book record and its original generated PDF reference when the destination is available.
-- Choose **New note** to create a study note in `Notes/`. On desktop, the note opens alongside the PDF when available. Set the default study folder and an optional Markdown template in **Community plugins → Obsidian Library**.
-- The plugin saves the current page after it settles in the active PDF++ book tab. Fast Note Sync sends the saved page to other devices. Cards show the saved page as a percentage of the catalog page count. Use **Confirm page…** to enter a page manually, mark a book complete, or resolve conflicting updates.
-- Browse 10 books at a time with **Previous** and **Next**. Search and filters apply to the full catalog. Use the **Reading** filter to return to a book in progress.
-- Use **⋯ → Delete from library…** to remove a book from the displayed catalog on synced devices. The PDF, notes, and reading progress are kept. To restore the book, remove its Markdown marker from `Biblioteca/_state/deleted/`.
-- Sync Markdown under `Biblioteca/` and your linked study folders with Fast Note Sync. In server mode, the latest synced catalog stays available offline and opening a PDF requires a server connection. In local mode, the plugin scans the configured folder directly and creates PDF references when needed.
+[Server setup](docs/server-setup.md) · [Advanced configuration](docs/configuration.md) · [Compatibility](docs/compatibility.md) · [Development and contributions](docs/development.md)
 
-## Metadata and covers
+## License
 
-The server publishes the catalog before calling `pdfinfo` and `pdftoppm`. A worker extracts the title, author, and page count and generates thumbnails up to 480 pixels. Click **Refresh** to fetch newly processed metadata.
-
-- For a custom cover, place `Book.cover.jpg` or `Book.cover.png` alongside `Book.pdf` on the server. Use an image up to 5 MiB and 4,000 pixels per side.
-- Use **⋯ → Change cover…** to select a PDF page. A custom image takes priority. The server caches the first page and the last alternate page rendered for each PDF.
-- Set `LIBRARY_GENERATE_COVERS=false` in Compose to disable new thumbnails. Install Poppler for metadata extraction and cover generation in a systemd deployment.
-
-## PDF storage
-
-Compose mounts `LIBRARY_BOOKS_DIR` on the Raspberry Pi as read-only at `/books`. The server indexes PDF paths recursively and serves stable HTTPS URLs by book ID.
-
-To change the source directory, run `python3 configurar-biblioteca.py` on the Pi. The helper accepts a local path or a Samba share served by the same Pi, resolves it to a Linux path, checks container access, and recreates the library service. If it cannot create the `.obsidian-library` marker, create an empty readable marker in the PDF directory first.
-
-Copy new PDFs to the source directory. They appear in the plugin after the server scans the directory and you click **Refresh**.
-
-## Test
-
-Run `go test ./...` in `server/` and `npm test` in `plugin/`. Follow the [device validation guide](docs/VALIDACAO.md) to verify opening and syncing in Obsidian.
+This repository has no declared license.
