@@ -18,6 +18,8 @@ Run the Obsidian Library server on a Linux host with access to your PDF folder. 
 
 Back up `catalog.json` from the state directory to preserve book IDs used by existing notes. If you remount the disk, run `docker compose up -d --force-recreate` to refresh the bind mount.
 
+To change the PDF folder in an existing Compose installation, run `python3 server/scripts/configurar-biblioteca.py` from the repository root and enter the new folder when prompted.
+
 ## Native Linux with systemd
 
 Build with Go 1.25 or later. Install Poppler for PDF metadata and generated covers.

@@ -13,7 +13,7 @@ import tempfile
 from datetime import datetime
 
 
-PROJECT = Path(__file__).resolve().parent
+PROJECT = Path(__file__).resolve().parents[2]
 
 
 def local_directory(value: str) -> Path:
