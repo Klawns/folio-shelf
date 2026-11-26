@@ -13,6 +13,10 @@ vi.mock("obsidian", () => {
 		dataset: Record<string, string> = {};
 		listeners = new Map<string, () => void>();
 		children: Element[] = [];
+		appendChild(child: Element): void { this.children.push(child); }
+		prepend(child: Element): void {
+			this.children = [child, ...this.children.filter(element => element !== child)];
+		}
 		createEl(_tag: string, options?: { text?: string; cls?: string }): Element {
 			const child = new Element();
 			child.text = options?.text ?? "";
@@ -49,6 +53,8 @@ vi.mock("obsidian", () => {
 		setTooltip: () => {},
 		Setting: class {
 			settingEl: Element;
+			descEl = new Element();
+			get controlEl(): Element { return this.settingEl; }
 			constructor(root: Element) { this.settingEl = root.createDiv(); }
 			setName(text: string): this { this.settingEl.text = text; return this; }
 			setDesc(): this { return this; }
@@ -136,11 +142,11 @@ it("shows the active source fields and loads a desktop folder from the settings"
 		find(text: string): Element | undefined;
 	};
 	const content = view.contentEl as unknown as Element;
-	const [address] = content.find("Server address")!.children;
+	const address = content.find("Server address")!.children.find(child => child.value === plugin.origin)!;
 	address.value = "http://books.example.test";
 	address.listeners.get("input")!();
 	expect(content.find("Enter a valid HTTPS server address.")).toBeDefined();
-	const [selector] = content.find("Storage location")!.children;
+	const selector = content.find("Storage location")!.children.find(child => child.value === "server")!;
 	selector.value = "local";
 	selector.listeners.get("change")!();
 	expect(content.find("Server address")).toBeUndefined();
@@ -148,7 +154,8 @@ it("shows the active source fields and loads a desktop folder from the settings"
 	input.value = "D:\\Books";
 	await content.find("Load books")!.listeners.get("click")!();
 	expect(plugin.useLocalFolder).toHaveBeenCalledWith("D:\\Books");
-	expect(content.find("Connected \u00b7 1 book")).toBeDefined();
+	expect(content.find("Connected")).toBeDefined();
+	expect(content.find("1 book available")).toBeDefined();
 	expect(close).toHaveBeenCalledOnce();
 });
 

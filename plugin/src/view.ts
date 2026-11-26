@@ -502,6 +502,13 @@ export class LibraryView extends ItemView {
 	private configure(): void {
 		const modal = new Modal(this.app);
 		modal.setTitle("Library source");
+		modal.modalEl.addClass("ol-source-modal");
+		setIcon(modal.titleEl.createSpan({ attr: { "aria-hidden": "true" } }), "database");
+		const close = modal.modalEl.createEl("button", {
+			cls: "ol-source-close", attr: { "aria-label": "Close" }
+		});
+		setIcon(close, "x");
+		close.addEventListener("click", () => modal.close());
 		renderLibrarySettings(modal.contentEl, this.plugin, () => modal.close());
 		modal.open();
 	}
@@ -753,8 +760,17 @@ function settingsGroup(parent: HTMLElement, title?: string, icon?: string): HTML
 	return section.createDiv("ol-settings-group");
 }
 
+function addSourceIcon(parent: HTMLElement, icon: string, cls: string): HTMLElement {
+	const el = parent.createSpan({ cls, attr: { "aria-hidden": "true" } });
+	setIcon(el, icon);
+	return el;
+}
+
 export function renderLibrarySettings(container: HTMLElement, plugin: LibraryPlugin, onSuccess?: () => void): void {
 	const settings = container.createDiv(onSuccess ? "ol-settings ol-settings-quick" : "ol-settings ol-settings-page");
+	if (onSuccess) settings.createDiv({
+		cls: "ol-source-description", text: "Manage where your library books are stored."
+	});
 	if (!onSuccess) {
 		const header = settings.createEl("header");
 		header.createEl("h2", { text: "Obsidian Library" });
@@ -765,9 +781,14 @@ export function renderLibrarySettings(container: HTMLElement, plugin: LibraryPlu
 	let localPath = plugin.localFolder;
 	let serverAddress = plugin.origin;
 	let sourceType = localPath ? "local" : serverAddress ? "server" : "";
-	const location = new Setting(source).setName("Storage location").setDesc("Choose where your books are stored.");
+	const location = new Setting(source).setName("Storage location");
+	if (!onSuccess) location.setDesc("Choose where your books are stored.");
 	const fields = source.createDiv("ol-source-fields ol-settings-divider");
 	location.addDropdown(selector => {
+		const locationIcon = onSuccess
+			? addSourceIcon(location.controlEl, sourceType === "local" ? "folder" : "server", "ol-source-field-icon")
+			: undefined;
+		if (onSuccess) addSourceIcon(location.controlEl, "chevron-down", "ol-source-chevron");
 		selector.addOption("", "Choose a source");
 		if (!Platform.isMobile) selector.addOption("local", "Local folder");
 		selector.addOption("server", "Remote server").setValue(sourceType);
@@ -781,6 +802,10 @@ export function renderLibrarySettings(container: HTMLElement, plugin: LibraryPlu
 				.setDesc(local ? "PDFs are scanned and opened in place with PDF++." : "HTTPS endpoint of your library server.");
 			row.settingEl.addClass("ol-source-setting");
 			row.addText(input => {
+				if (onSuccess) {
+					addSourceIcon(row.controlEl, local ? "folder" : "link", "ol-source-field-icon");
+					row.settingEl.appendChild(row.descEl);
+				}
 				input.setPlaceholder(local ? "C:/Books" : "https://server.example:9443")
 					.setValue(local ? localPath : serverAddress);
 				input.inputEl.type = "text";
@@ -789,9 +814,17 @@ export function renderLibrarySettings(container: HTMLElement, plugin: LibraryPlu
 				input.inputEl.setAttribute("aria-label", local ? "PDF folder" : "Server address");
 				const actions = fields.createDiv("ol-settings-actions ol-settings-divider");
 				const status = actions.createDiv({ cls: "ol-source-status", attr: { role: "status" } });
-				const setState = (state: string, message: string) => {
+				const statusIcon = onSuccess ? addSourceIcon(status, "circle-minus", "ol-source-status-icon") : undefined;
+				const statusCopy = onSuccess ? status.createDiv("ol-source-status-copy") : undefined;
+				const statusTitle = statusCopy?.createDiv("ol-source-status-title");
+				const statusDetail = statusCopy?.createDiv("ol-source-status-detail");
+				const setState = (state: string, message: string, detail = "", icon = "circle-alert") => {
 					status.dataset.state = state;
-					status.setText(message);
+					if (statusIcon && statusTitle && statusDetail) {
+						setIcon(statusIcon, icon);
+						statusTitle.setText(message);
+						statusDetail.setText(detail);
+					} else status.setText(message);
 				};
 				const show = () => {
 					input.inputEl.setAttribute("aria-invalid", "false");
@@ -806,10 +839,15 @@ export function renderLibrarySettings(container: HTMLElement, plugin: LibraryPlu
 							return;
 						}
 					}
-					if (!active) return setState("idle", local ? "Folder not scanned" : "Connection not tested");
+					if (!active) return setState("idle", local ? "Folder not scanned" : "Connection not tested", "", "circle-minus");
 					const count = plugin.books.length;
 					if (plugin.error) return setState(plugin.connected ? "warning" : "error", plugin.error);
-					if (plugin.connected) return setState("connected", "Connected \u00b7 " + count + (count === 1 ? " book" : " books"));
+					if (plugin.connected) {
+						const books = count + (count === 1 ? " book" : " books");
+						return onSuccess
+							? setState("connected", "Connected", books + " available", "circle-check")
+							: setState("connected", "Connected \u00b7 " + books);
+					}
 					setState("error", "Unavailable");
 				};
 				input.onChange(value => {
@@ -819,11 +857,12 @@ export function renderLibrarySettings(container: HTMLElement, plugin: LibraryPlu
 				});
 				show();
 				const action = actions.createEl("button", { text: local ? "Load books" : "Test connection" });
+				if (onSuccess) action.prepend(addSourceIcon(action, "refresh-cw", "ol-source-action-icon"));
 				action.addEventListener("click", async () => {
 					action.disabled = true;
 					selector.setDisabled(true);
 					input.setDisabled(true);
-					setState("busy", local ? "Scanning folder..." : "Testing connection...");
+					setState("busy", local ? "Scanning folder..." : "Testing connection...", "", "clock");
 					try {
 						if (local) {
 							await plugin.useLocalFolder(input.getValue());
@@ -848,14 +887,19 @@ export function renderLibrarySettings(container: HTMLElement, plugin: LibraryPlu
 			if (!local) {
 				const guide = fields.createEl("details", { cls: "ol-server-guide" });
 				const summary = guide.createEl("summary");
-				for (const icon of ["chevron-right", "chevron-down"]) {
+				for (const icon of onSuccess ? ["book-open"] : ["chevron-right", "chevron-down"]) {
 					setIcon(summary.createSpan({ cls: "ol-guide-" + icon, attr: { "aria-hidden": "true" } }), icon);
 				}
 				summary.createSpan({ text: "Server setup guide" });
+				if (onSuccess) addSourceIcon(summary, "chevron-right", "ol-source-chevron");
 				guide.createEl("p", { text: "Run the Obsidian Library server on a computer that can read your PDF folder. Make the service available over HTTPS and enter its base address here." });
 			}
 		};
-		selector.onChange(value => { sourceType = value; renderSource(); });
+		selector.onChange(value => {
+			sourceType = value;
+			if (locationIcon) setIcon(locationIcon, value === "local" ? "folder" : "server");
+			renderSource();
+		});
 		renderSource();
 	});
 	if (onSuccess) return;
