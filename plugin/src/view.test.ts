@@ -1,6 +1,12 @@
 import { expect, it, vi } from "vitest";
+import { Platform } from "obsidian";
 import type LibraryPlugin from "./main";
 import { LibraryView, renderLibrarySettings } from "./view";
+
+const { menuItems, showMenu } = vi.hoisted(() => ({
+	menuItems: new Map<string, { checked: boolean; select: () => void }>(),
+	showMenu: vi.fn(),
+}));
 
 vi.mock("obsidian", () => {
 	class Element {
@@ -27,6 +33,7 @@ vi.mock("obsidian", () => {
 		createDiv(options?: string | { text?: string }): Element {
 			return this.createEl("div", typeof options === "string" ? { cls: options } : options);
 		}
+		getBoundingClientRect() { return { left: 10, bottom: 50, width: 200 }; }
 		addClass(): void {}
 		addEventListener(event: string, listener: () => void): void { this.listeners.set(event, listener); }
 		querySelector(): null { return null; }
@@ -47,6 +54,25 @@ vi.mock("obsidian", () => {
 			contentEl = new Element();
 			open(): Promise<void> { return this.onOpen(); }
 			async onOpen(): Promise<void> {}
+		},
+		Menu: class {
+			constructor() { menuItems.clear(); }
+			addItem(build: (item: {
+				setTitle: (title: string) => typeof item;
+				setChecked: (checked: boolean) => typeof item;
+				onClick: (select: () => void) => void;
+			}) => void) {
+				let title = "";
+				let checked = false;
+				const item = {
+					setTitle: (value: string) => { title = value; return item; },
+					setChecked: (value: boolean) => { checked = value; return item; },
+					onClick: (select: () => void) => { menuItems.set(title, { checked, select }); },
+				};
+				build(item);
+			}
+			onHide(): void {}
+			showAtPosition = showMenu;
 		},
 		Platform: { isMobile: false },
 		setIcon: () => {},
@@ -121,7 +147,7 @@ it("renders the library when Obsidian opens the workspace view", async () => {
 	expect(JSON.stringify(content)).toContain("Page 1 of 2");
 });
 
-it("shows the active source fields and loads a desktop folder from the settings", async () => {
+it("shows the active source fields and loads a desktop folder from the source menu", async () => {
 	const plugin = {
 		localFolder: "",
 		origin: "https://books.example.test",
@@ -146,9 +172,15 @@ it("shows the active source fields and loads a desktop folder from the settings"
 	address.value = "http://books.example.test";
 	address.listeners.get("input")!();
 	expect(content.find("Enter a valid HTTPS server address.")).toBeDefined();
-	const selector = content.find("Storage location")!.children.find(child => child.value === "server")!;
-	selector.value = "local";
-	selector.listeners.get("change")!();
+	const selector = content.find("Storage location")!.children.find(child => child.find("Remote server"))!;
+	selector.listeners.get("click")!();
+	expect(showMenu).toHaveBeenLastCalledWith({ x: 10, y: 54, width: 200, overlap: true, left: false }, undefined);
+	expect(menuItems.get("Remote server")?.checked).toBe(true);
+	expect(menuItems.get("Local folder")?.checked).toBe(false);
+	menuItems.get("Local folder")!.select();
+	expect(selector.find("Local folder")).toBeDefined();
+	selector.listeners.get("click")!();
+	expect(menuItems.get("Local folder")?.checked).toBe(true);
 	expect(content.find("Server address")).toBeUndefined();
 	const [input] = content.find("PDF folder")!.children;
 	input.value = "D:\\Books";
@@ -157,6 +189,26 @@ it("shows the active source fields and loads a desktop folder from the settings"
 	expect(content.find("Connected")).toBeDefined();
 	expect(content.find("1 book available")).toBeDefined();
 	expect(close).toHaveBeenCalledOnce();
+});
+
+it("offers only the remote source in the native mobile selector", () => {
+	const platform = Platform as { isMobile: boolean };
+	const original = platform.isMobile;
+	platform.isMobile = true;
+	try {
+		const plugin = { localFolder: "D:\\Books", origin: "", books: [] } as unknown as LibraryPlugin;
+		const view = new LibraryView({} as ConstructorParameters<typeof LibraryView>[0], plugin);
+		renderLibrarySettings(view.contentEl, plugin, vi.fn());
+
+		type Element = { text: string; value: string; children: Element[]; find(text: string): Element | undefined };
+		const content = view.contentEl as unknown as Element;
+		const selector = content.find("Storage location")!.children.find(child => child.find("Choose a source"))!;
+		expect(selector.children.map(option => option.text)).toEqual(["Choose a source", "Remote server"]);
+		expect(selector.value).toBe("");
+		expect(content.find("PDF folder")).toBeUndefined();
+	} finally {
+		platform.isMobile = original;
+	}
 });
 
 it("resumes the most recently read available book at its saved page", async () => {
