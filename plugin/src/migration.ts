@@ -17,7 +17,7 @@ export function pendingMigration(app: App): DataMigration | undefined {
 }
 
 function conflict(path: string): Error {
-	return new Error("Resolve the library data conflict at " + path + " and try Apply again.");
+	return new Error("Resolve the library data conflict at " + path + " and try again.");
 }
 
 function entries(folder: TFolder, root = folder.path): string[] {

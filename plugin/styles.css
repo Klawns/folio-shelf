@@ -636,6 +636,7 @@
 }
 
 .ol-settings-page > .ol-settings-section > .ol-settings-group .ol-settings-divider:not(:empty) {
+	border-radius: 0;
 	border-top: 1px solid color-mix(in srgb, var(--background-modifier-border) 50%, transparent);
 }
 
@@ -691,6 +692,14 @@
 
 .ol-settings-group input[aria-invalid="true"] {
 	border-color: var(--text-error);
+}
+
+.ol-data-resume[hidden] { display: none; }
+
+.ol-data-error {
+	color: var(--text-error);
+	font-size: var(--font-ui-small);
+	overflow-wrap: anywhere;
 }
 
 .ol-settings-actions {

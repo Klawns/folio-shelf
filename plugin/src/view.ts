@@ -738,7 +738,7 @@ export class LibraryView extends ItemView {
 	}
 }
 
-function chooseVaultPath(plugin: LibraryPlugin, folders: boolean, onSelect: (path: string) => void): void {
+function chooseVaultPath(plugin: LibraryPlugin, folders: boolean, onSelect: (path: string) => void, onClose?: () => void): void {
 	const options = folders ? plugin.app.vault.getAllFolders() : plugin.app.vault.getMarkdownFiles();
 	const paths = options.map(file => file.path).sort(collator.compare);
 	const picker = new class extends SuggestModal<string> {
@@ -747,6 +747,10 @@ function chooseVaultPath(plugin: LibraryPlugin, folders: boolean, onSelect: (pat
 		}
 		renderSuggestion(path: string, el: HTMLElement): void { el.setText(path); }
 		onChooseSuggestion(path: string): void { onSelect(path); }
+		onClose(): void {
+			super.onClose();
+			onClose?.();
+		}
 	}(plugin.app);
 	picker.setPlaceholder(folders ? "Search vault folders..." : "Search Markdown files...");
 	picker.open();
@@ -773,54 +777,79 @@ function confirmDataMove(plugin: LibraryPlugin, from: string, to: string): Promi
 function renderDataStorage(settings: HTMLElement, plugin: LibraryPlugin): void {
 	const group = settingsGroup(settings, "Data storage", "database");
 	const row = new Setting(group).setName("Library data folder")
-		.setDesc("Choose where the library stores its catalog, reading progress, and PDF references.");
-	const feedback = group.createDiv({ cls: "ol-secondary", attr: { role: "status" } });
-	let path = plugin.dataMigration?.to ?? plugin.storage.root;
+		.setDesc("Stores catalog, progress, and PDF references.");
+	const feedback = group.createDiv({ cls: "ol-data-error", attr: { role: "status" } });
 	let field: HTMLInputElement;
-	let browse: HTMLButtonElement | undefined;
+	let browse: HTMLButtonElement;
+	let busy = false;
+	let picking = false;
+	let lastSubmitted = plugin.storage.root;
 	const update = () => {
 		const pending = plugin.dataMigration;
-		field.disabled = !!pending;
-		if (browse) browse.disabled = !!pending;
-		if (pending) feedback.setText("Current folder: " + pending.from + "/. Select Apply to resume the move to " + pending.to + "/.");
+		field.disabled = browse.disabled = busy || !!pending;
+		resume.hidden = !pending;
+		resume.disabled = busy;
+		if (pending) field.value = pending.to;
+	};
+	const submit = async (path: string, explicit = false) => {
+		if (busy || (!explicit && path === lastSubmitted)) return;
+		busy = true;
+		lastSubmitted = path;
+		feedback.setText("");
+		field.removeAttribute("aria-invalid");
+		update();
+		try {
+			await plugin.changeDataFolder(path, (from, to) => confirmDataMove(plugin, from, to));
+			field.value = lastSubmitted = plugin.storage.root;
+		} catch (error) {
+			field.setAttribute("aria-invalid", "true");
+			feedback.setText(error instanceof Error ? error.message : "Could not change the library data folder.");
+		} finally {
+			busy = false;
+			update();
+		}
 	};
 	row.addText(input => {
-		input.setValue(path).onChange(value => { path = value; });
+		input.setValue(plugin.storage.root);
 		field = input.inputEl;
 		field.setAttribute("aria-label", "Library data folder");
-		browse = field.parentElement?.createEl("button", {
-			cls: "ol-settings-icon", attr: { type: "button", "aria-label": "Select library data folder" },
+		field.addEventListener("input", () => {
+			field.removeAttribute("aria-invalid");
+			feedback.setText("");
+			lastSubmitted = plugin.storage.root;
 		});
-		if (!browse) return;
-		setIcon(browse, "folder");
-		setTooltip(browse, "Select library data folder");
-		browse.addEventListener("click", () => chooseVaultPath(plugin, true, selected => {
-			path = selected;
-			input.setValue(selected);
-		}));
+		field.addEventListener("keydown", event => {
+			if (event.key !== "Enter" || event.isComposing) return;
+			event.preventDefault();
+			if (!event.repeat) void submit(field.value, field.getAttribute("aria-invalid") === "true");
+		});
+		field.addEventListener("blur", event => {
+			if (!picking && !plugin.dataMigration && event.relatedTarget !== browse) void submit(field.value);
+		});
+	});
+	browse = row.controlEl.createEl("button", {
+		cls: "ol-settings-icon", attr: { type: "button", "aria-label": "Select library data folder" },
+	});
+	setIcon(browse, "folder");
+	setTooltip(browse, "Select library data folder");
+	browse.addEventListener("pointerdown", event => {
+		if (field === field.ownerDocument.activeElement) event.preventDefault();
+	});
+	browse.addEventListener("blur", () => {
+		if (!picking && !plugin.dataMigration) void submit(field.value);
+	});
+	browse.addEventListener("click", () => {
+		picking = true;
+		chooseVaultPath(plugin, true, selected => {
+			field.value = selected;
+			void submit(selected, true);
+		}, () => { picking = false; });
+	});
+	const resume = row.controlEl.createEl("button", { text: "Resume move", cls: "ol-data-resume", attr: { type: "button" } });
+	resume.addEventListener("click", () => {
+		if (plugin.dataMigration) void submit(plugin.dataMigration.to, true);
 	});
 	update();
-	row.addButton(button => {
-		button.setButtonText("Apply");
-		button.onClick(async () => {
-			button.setDisabled(true);
-			field.disabled = true;
-			if (browse) browse.disabled = true;
-			try {
-				if (await plugin.changeDataFolder(path, (from, to) => confirmDataMove(plugin, from, to))) {
-					path = plugin.storage.root;
-					field.value = path;
-					feedback.setText("Library data folder: " + path + "/");
-				}
-			} catch (error) {
-				update();
-				feedback.setText(error instanceof Error ? error.message : "Could not change the library data folder.");
-			} finally {
-				if (!plugin.dataMigration) update();
-				button.setDisabled(false);
-			}
-		});
-	});
 }
 
 function settingsGroup(parent: HTMLElement, title?: string, icon?: string): HTMLElement {

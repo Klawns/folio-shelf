@@ -232,6 +232,9 @@ it("migrates legacy data and resumes when Obsidian closes during a rename", asyn
 	expect(files.get(oldPath)).toBe(ref);
 	files.delete("New/Data/_refs");
 
+	const confirmResume = vi.fn();
+	expect(await blocked.changeDataFolder("New/Data", confirmResume)).toBe(true);
+	expect(confirmResume).not.toHaveBeenCalled();
 	const restarted = await start();
 	expect(pendingMigration(app)).toBeUndefined();
 	expect(restarted.storage.root).toBe("New/Data");

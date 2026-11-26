@@ -3,9 +3,10 @@ import { Platform } from "obsidian";
 import type LibraryPlugin from "./main";
 import { LibraryView, renderLibrarySettings } from "./view";
 
-const { menuItems, showMenu } = vi.hoisted(() => ({
+const { menuItems, showMenu, picker } = vi.hoisted(() => ({
 	menuItems: new Map<string, { checked: boolean; select: () => void }>(),
 	showMenu: vi.fn(),
+	picker: { choose: (_path: string) => {} },
 }));
 
 vi.mock("obsidian", () => {
@@ -44,7 +45,10 @@ vi.mock("obsidian", () => {
 				if (match) return match;
 			}
 		}
-		setAttribute(): void {}
+		attrs = new Map<string, string>();
+		setAttribute(name: string, value: string): void { this.attrs.set(name, value); }
+		getAttribute(name: string): string | undefined { return this.attrs.get(name); }
+		removeAttribute(name: string): void { this.attrs.delete(name); }
 		empty(): void { this.children = []; }
 		setText(text: string): void { this.text = text; }
 	}
@@ -73,6 +77,17 @@ vi.mock("obsidian", () => {
 			}
 			onHide(): void {}
 			showAtPosition = showMenu;
+		},
+		SuggestModal: class {
+			setPlaceholder(): void {}
+			onClose(): void {}
+			open(): void {
+				picker.choose = path => {
+					this.onClose();
+					this.onChooseSuggestion(path);
+				};
+			}
+			onChooseSuggestion(_path: string): void {}
 		},
 		Platform: { isMobile: false },
 		setIcon: () => {},
@@ -260,3 +275,80 @@ it("resumes the most recently read available book at its saved page", async () =
 	expect(content.children.flatMap(node => node.children).some(node => node.cls === "ol-resume")).toBe(false);
 	expect(openBook).toHaveBeenCalledExactlyOnceWith(books[1], 21, false);
 });
+
+it.each(["Enter", "blur", "picker"])("submits a data folder once via %s and restores it on cancellation", async trigger => {
+	const changeDataFolder = vi.fn().mockResolvedValue(false);
+	const { field, browse } = dataStorageControls(changeDataFolder);
+	const blur = () => field.listeners.get("blur")!({});
+	field.value = trigger === "picker" ? "Draft" : "New folder";
+	field.listeners.get("input")!({});
+	if (trigger === "Enter") {
+		field.listeners.get("keydown")!({ key: "Enter", preventDefault: vi.fn() });
+	} else if (trigger === "picker") {
+		field.listeners.get("blur")!({ relatedTarget: browse });
+		browse.listeners.get("click")!({});
+		blur();
+		expect(changeDataFolder).not.toHaveBeenCalled();
+		picker.choose("New folder");
+	}
+	blur();
+	await Promise.resolve();
+	blur();
+	expect(changeDataFolder).toHaveBeenCalledExactlyOnceWith("New folder", expect.any(Function));
+	expect(field.value).toBe("Library");
+});
+
+it("shows the data conflict and resumes the pending data move", async () => {
+	const changeDataFolder = vi.fn();
+	const { plugin, field, resume, content } = dataStorageControls(changeDataFolder);
+	changeDataFolder.mockImplementationOnce(async () => {
+		plugin.dataMigration = { to: "New folder" } as LibraryPlugin["dataMigration"];
+		throw new Error("Conflict at New folder/_refs");
+	}).mockImplementationOnce(async () => {
+		plugin.dataMigration = undefined;
+		Object.assign(plugin.storage, { root: "New folder" });
+		return true;
+	});
+	expect(resume.hidden).toBe(true);
+	field.value = "New folder";
+	field.listeners.get("blur")!({});
+	await Promise.resolve();
+	expect(field.disabled).toBe(true);
+	expect(field.attrs.get("aria-invalid")).toBe("true");
+	expect(content.find("Conflict at New folder/_refs")).toBeDefined();
+	expect(resume.hidden).toBe(false);
+	resume.listeners.get("click")!({});
+	await Promise.resolve();
+	expect(changeDataFolder).toHaveBeenCalledTimes(2);
+	expect(field.value).toBe("New folder");
+	expect(field.disabled).toBe(false);
+	expect(field.attrs.has("aria-invalid")).toBe(false);
+	expect(content.find("Conflict at New folder/_refs")).toBeUndefined();
+	expect(resume.hidden).toBe(true);
+});
+
+function dataStorageControls(changeDataFolder: ReturnType<typeof vi.fn>) {
+	const plugin = {
+		app: { vault: { getAllFolders: () => [{ path: "New folder" }] } },
+		localFolder: "",
+		origin: "",
+		books: [],
+		storage: { root: "Library" },
+		appearance: { layout: "grid", coverSize: 150 },
+		changeDataFolder,
+	} as unknown as LibraryPlugin;
+	const view = new LibraryView({} as ConstructorParameters<typeof LibraryView>[0], plugin);
+	renderLibrarySettings(view.contentEl, plugin);
+	type Element = {
+		children: Element[];
+		listeners: Map<string, (event: object) => void>;
+		attrs: Map<string, string>;
+		value: string;
+		disabled: boolean;
+		hidden: boolean;
+		find(text: string): Element | undefined;
+	};
+	const content = view.contentEl as unknown as Element;
+	const [field, browse, resume] = content.find("Library data folder")!.children;
+	return { plugin, field, browse, resume, content };
+}
