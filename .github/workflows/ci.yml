@@ -46,3 +46,15 @@ jobs:
           cache: false
       - run: go test ./...
         working-directory: server
+
+  required-tests:
+    name: Project tests
+    if: always()
+    needs: [plugin, server]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check test results
+        env:
+          PLUGIN_RESULT: ${{ needs.plugin.result }}
+          SERVER_RESULT: ${{ needs.server.result }}
+        run: test "$PLUGIN_RESULT" = success && test "$SERVER_RESULT" = success
