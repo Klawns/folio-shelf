@@ -98,7 +98,13 @@ vi.mock("obsidian", () => {
 			get controlEl(): Element { return this.settingEl; }
 			constructor(root: Element) { this.settingEl = root.createDiv(); }
 			setName(text: string): this { this.settingEl.text = text; return this; }
-			setDesc(): this { return this; }
+			setDesc(text: string): this {
+				this.descEl.setText(text);
+				if (this.settingEl.text === "Storage location" && !this.settingEl.children.includes(this.descEl)) {
+					this.settingEl.appendChild(this.descEl);
+				}
+				return this;
+			}
 			setHeading(): this { return this; }
 			addDropdown(callback: (control: object) => void): this {
 				const selectEl = this.settingEl.createEl("select");
@@ -196,6 +202,7 @@ it.each(["modal", "settings"] as const)("loads a desktop folder from the %s sour
 		find(text: string): Element | undefined;
 	};
 	const content = view.contentEl as unknown as Element;
+	expect(content.find("Connect to your library over private HTTPS.")).toBeDefined();
 	const address = content.find("Server address")!.children.find(child => child.value === plugin.origin)!;
 	address.value = "http://books.example.test";
 	address.listeners.get("input")!();
@@ -209,6 +216,7 @@ it.each(["modal", "settings"] as const)("loads a desktop folder from the %s sour
 	expect(menuItems.get("Remote server")?.checked).toBe(true);
 	expect(menuItems.get("Local folder")?.checked).toBe(false);
 	menuItems.get("Local folder")!.select();
+	expect(content.find("Read PDFs from a local or shared folder this computer can access.")).toBeDefined();
 	expect(selector.find("Local folder")).toBeDefined();
 	selector.listeners.get("click")!();
 	expect(menuItems.get("Local folder")?.checked).toBe(true);
@@ -237,6 +245,7 @@ it("offers only the remote source and explains shared folders on mobile", () => 
 
 		type Element = { text: string; value: string; children: Element[]; listeners: Map<string, () => unknown>; find(text: string): Element | undefined };
 		const content = view.contentEl as unknown as Element;
+		expect(content.find("Connect to your library over private HTTPS.")).toBeDefined();
 		const selector = content.find("Storage location")!.children.find(child => child.find("Remote server"))!;
 		expect(selector.children.map(option => option.text)).toEqual(["Choose a source", "Remote server"]);
 		expect(selector.value).toBe("server");
@@ -248,6 +257,14 @@ it("offers only the remote source and explains shared folders on mobile", () => 
 	} finally {
 		platform.isMobile = original;
 	}
+});
+
+it("describes the available sources before the first desktop selection", () => {
+	const plugin = { localFolder: "", origin: "" } as unknown as LibraryPlugin;
+	const view = new LibraryView({} as ConstructorParameters<typeof LibraryView>[0], plugin);
+	renderLibrarySettings(view.contentEl, plugin, vi.fn());
+	expect((view.contentEl as unknown as { find(text: string): unknown })
+		.find("Choose a local folder or connect to a remote server.")).toBeDefined();
 });
 
 it("resumes the most recently read available book at its saved page", async () => {

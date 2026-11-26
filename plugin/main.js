@@ -1512,9 +1512,11 @@ function renderLibrarySettings(container, plugin, onSuccess) {
   let localPath = plugin.localFolder;
   let serverAddress = plugin.origin;
   let sourceType = localPath && !import_obsidian4.Platform.isMobile ? "local" : serverAddress ? "server" : "";
-  const location = new import_obsidian4.Setting(source).setName("Storage location").setDesc(import_obsidian4.Platform.isMobile ? "Remote server connects to your library over private HTTPS." : "Local folder reads PDFs from a drive or shared folder this computer can access. Remote server connects over private HTTPS and also works on mobile.");
+  const location = new import_obsidian4.Setting(source).setName("Storage location");
+  location.settingEl.addClass("ol-storage-location");
   const fields = source.createDiv("ol-source-fields ol-settings-divider");
   const renderSource = () => {
+    location.setDesc(sourceType === "local" ? "Read PDFs from a local or shared folder this computer can access." : sourceType === "server" || import_obsidian4.Platform.isMobile ? "Connect to your library over private HTTPS." : "Choose a local folder or connect to a remote server.");
     fields.empty();
     if (!sourceType) return;
     const local = sourceType === "local";

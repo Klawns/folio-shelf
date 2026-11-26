@@ -1,39 +1,61 @@
 # Server setup
 
-On Obsidian desktop, choose **Local folder** to read directly from a path like `C:\Books` or `\\files.home\shares\books`. Obsidian may ask you to allow access to the network host when PDF++ first opens a book from a share. To use **Remote server** on desktop or mobile, run the Obsidian Library server on a Linux host that can read your PDFs. The server indexes PDFs recursively and serves the catalog, covers, and PDF files.
+Use **Remote server** to browse your library from Obsidian desktop or mobile. Run the library server on a Linux host that can read your PDFs.
 
-## Guided setup with Docker Compose
+```mermaid
+%%{init: {"theme":"base","themeVariables":{"background":"#202020","lineColor":"#92929a","primaryTextColor":"#eeeeee","clusterBkg":"#222222","clusterBorder":"#505050","edgeLabelBackground":"#202020"}}}%%
+flowchart TB
+    Desktop("Obsidian Desktop") --> HTTPS
+    Mobile("Obsidian Mobile") --> HTTPS
+    HTTPS("Private HTTPS<br/>Tailscale or reverse proxy") --> Server
+    subgraph Host["Linux host"]
+        Server("Library Server · Docker / Go")
+        Server --- PDFs("PDF files")
+        Server --- Catalog("Catalog & covers")
+    end
+    classDef standard fill:#272727,stroke:#505050,color:#eeeeee
+    classDef accent fill:#302b38,stroke:#8d75be,color:#eeeeee
+    class Desktop,Mobile,PDFs,Catalog standard
+    class HTTPS,Server accent
+    style Host fill:#222222,stroke:#505050,color:#bbbbbb
+```
 
-1. Install Docker Engine with the Docker Compose plugin and start Docker. Have Python 3.10 or later available. The installer uses `sudo` for Docker commands when run as a regular user.
-2. Set up private HTTPS. With Tailscale, connect the Linux server and each Obsidian device to your tailnet. Enable HTTPS certificates if prompted, then run the following on Linux. Copy the HTTPS address printed by Serve. [Tailscale Serve documentation](https://tailscale.com/docs/reference/tailscale-cli/serve)
+## Prerequisites
 
-   ```sh
-   sudo tailscale serve --bg http://127.0.0.1:8091
-   tailscale serve status
-   ```
+- Linux with Docker Engine running, the Docker Compose plugin, and Python 3.10 or later. The installer uses `sudo` for Docker commands when run as a regular user.
+- A PDF folder on the server and a separate, writable directory for server state. Mount shares hosted on another machine in Linux first. A Samba share hosted on the server can be entered directly and requires Samba's `testparm` command.
+- A private HTTPS address with a certificate trusted by your Obsidian devices.
 
-   An existing private HTTPS proxy can also forward the root of its HTTPS address to `http://127.0.0.1:8091` on the server. Use a certificate trusted by each client device. Keep the listener on loopback and restrict access through the private network or proxy. The library server has no built-in authentication. Avoid public exposure through port forwarding or Tailscale Funnel.
+## Private HTTPS
 
-3. From the repository root, run the installer.
+Connect the Linux host and each Obsidian device to your Tailscale network. Run the following on the Linux host. Enable HTTPS certificates if prompted, then copy the HTTPS address printed by Serve. [Tailscale Serve documentation](https://tailscale.com/docs/reference/tailscale-cli/serve)
 
-   ```sh
-   python3 server/scripts/instalar-biblioteca.py
-   ```
+```sh
+sudo tailscale serve --bg http://127.0.0.1:8091
+tailscale serve status
+```
 
-   Enter an absolute Linux path or a Samba share hosted by this Linux server, such as `//linux-host/books`. Resolving a local Samba share requires Samba's `testparm` command. Mount shares hosted on another machine in Linux first and enter the absolute mount path. The installer needs permission to create the marker in the PDF folder if it is absent. Choose a state directory outside the PDF folder. The installer can create it under an existing parent directory if it has write access there.
+You can also use an existing private HTTPS proxy on the host. Forward the root of its HTTPS address to `http://127.0.0.1:8091`. Keep the service on loopback and limit access to trusted devices. The server has no built-in authentication. Avoid public port forwarding and Tailscale Funnel.
 
-   Enter the private HTTPS address, such as `https://library.example.ts.net`, and review the configuration. After confirmation, the installer prepares the library marker, checks Compose and container access, writes `.env`, and starts the server. Compose mounts the PDFs read-only.
-4. On the device running Obsidian, open the printed `/health` URL. When `catalogReady` is `true`, choose **Remote server**, paste the printed HTTPS base address, and select **Test connection**. If the device cannot open `/health`, check its private network access and certificate trust. If the catalog stays unavailable, check the PDF mount and the service logs with `docker compose logs obsidian-library`.
+## Installation
 
-For manual Compose setup, use [`.env.example`](../.env.example), create an empty `.obsidian-library` marker in the PDF folder, and give the configured container user read access to the PDFs and marker and write access to the state directory. Start with `docker compose up -d --build`, using the same private HTTPS setup and health check.
+### Docker Compose
 
-Back up `catalog.json` from the state directory to preserve book IDs used by existing notes. If you remount the disk, run `docker compose up -d --force-recreate` to refresh the bind mount.
+Run the installer from the repository root.
 
-To change the PDF folder in an existing Compose installation, run `python3 server/scripts/configurar-biblioteca.py` from the repository root and enter the new folder when prompted.
+```sh
+python3 server/scripts/instalar-biblioteca.py
+```
 
-## Native Linux with systemd
+Enter the absolute Linux path to the PDFs or a local Samba share such as `//linux-host/books`. Enter a state directory outside the PDF folder. If it needs to be created, use an existing parent directory you can write to. Enter the private HTTPS address, such as `https://library.example.ts.net`, and confirm the configuration.
 
-Build with Go 1.25 or later. Install Poppler for PDF metadata and generated covers.
+The installer prepares the `.obsidian-library` marker, checks Compose and container access, writes `.env`, and starts the server. It needs write access to the PDF folder if the marker is absent. Compose mounts the PDFs read-only.
+
+For manual setup, copy [`.env.example`](../.env.example) to `.env` and set the folder and HTTPS values. Create the marker and give the configured container user read access to the PDFs and marker and write access to the state directory. Run `docker compose up -d --build` from the repository root.
+
+### Native Linux with systemd
+
+Install Go 1.25 or later and Poppler for PDF metadata and cover generation. From the repository root, build and install the binary.
 
 ```sh
 cd server
@@ -41,12 +63,36 @@ go build -trimpath -o obsidian-library .
 sudo install -m 0755 obsidian-library /usr/local/bin/obsidian-library
 ```
 
-Create an `obsidian-library` system user and group with read access to the PDF folder and its `.obsidian-library` marker. Copy [`server/.env.example`](../server/.env.example) to `/etc/obsidian-library.env` and set the PDF folder and HTTPS address. Install the [systemd unit](../server/obsidian-library.service) in `/etc/systemd/system/`. It creates the default writable state directory under `/var/lib/`.
+Create an `obsidian-library` system user and group with read access to the PDFs and their `.obsidian-library` marker. Use a path outside home directories because the unit restricts home directory access. From the `server` directory, install and edit the environment file and install the systemd unit. The unit creates the default state directory under `/var/lib/`.
 
 ```sh
+sudo install -m 0644 .env.example /etc/obsidian-library.env
+sudoedit /etc/obsidian-library.env
+sudo install -m 0644 obsidian-library.service /etc/systemd/system/obsidian-library.service
 sudo systemctl daemon-reload
 sudo systemctl enable --now obsidian-library
-sudo journalctl -u obsidian-library
 ```
 
-Use the same HTTPS routing and health check as in the Compose setup. See [advanced configuration](configuration.md) for scan intervals, covers, and CORS.
+## Connect from Obsidian
+
+1. Open the HTTPS address with `/health` appended on the device running Obsidian. Wait until `catalogReady` is `true`.
+2. In **Set up library**, choose **Remote server**. Paste the private HTTPS address without `/health`, then select **Test connection**.
+3. Open a book with PDF++. Select **Refresh** after the server indexes newly added PDFs.
+
+## Maintenance
+
+Run Compose commands from the repository root. Use `sudo` if your user needs it to access Docker.
+
+- To change the PDF folder, run `python3 server/scripts/configurar-biblioteca.py` and follow the prompt.
+- After remounting the PDF disk, run `docker compose up -d --force-recreate` to refresh the bind mount.
+- See [advanced configuration](configuration.md#server-options) for scan intervals and cover settings.
+
+## Backups
+
+Back up `catalog.json` from the state directory to preserve book IDs used by existing notes. Keep copies of your PDFs and vault separately.
+
+## Troubleshooting
+
+- If `/health` is unreachable, check private network access and certificate trust on the device running Obsidian.
+- If `catalogReady` stays `false`, check that the PDF mount and marker are readable. View logs with `docker compose logs obsidian-library` or `sudo journalctl -u obsidian-library` for systemd.
+- On Windows, choose **Local folder** for paths like `C:\Books` or `\\files.home\shares\books`. Obsidian may ask for permission to access the network host when PDF++ first opens a book from a share.

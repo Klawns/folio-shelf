@@ -690,6 +690,19 @@
 	width: 17rem;
 }
 
+.ol-settings-page .ol-storage-location .setting-item-control {
+	flex: 0 0 auto;
+}
+
+@media (max-width: 480px) {
+	.ol-settings-page .ol-storage-location {
+		flex-wrap: wrap;
+	}
+	.ol-settings-page .ol-storage-location .setting-item-info {
+		flex-basis: 100%;
+	}
+}
+
 .ol-settings-group input[aria-invalid="true"] {
 	border-color: var(--text-error);
 }

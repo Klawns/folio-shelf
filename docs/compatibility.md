@@ -4,8 +4,8 @@ The [plugin manifest](../manifest.json) declares Obsidian **1.8.0** as the minim
 
 | Mode | Desktop | Mobile |
 | --- | --- | --- |
-| Local folder | Available through desktop filesystem APIs | Unavailable |
-| Remote server | Available over HTTPS | Available over HTTPS |
+| **Local folder** | Local and shared folders | Unavailable |
+| **Remote server** | Private HTTPS | Private HTTPS |
 
 PDF++ with external PDFs enabled is required to open books. Fast Note Sync is optional and syncs vault files. It does not provide access to the original PDFs.
 

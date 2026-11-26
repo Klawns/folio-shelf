@@ -884,11 +884,15 @@ export function renderLibrarySettings(container: HTMLElement, plugin: LibraryPlu
 	let localPath = plugin.localFolder;
 	let serverAddress = plugin.origin;
 	let sourceType = localPath && !Platform.isMobile ? "local" : serverAddress ? "server" : "";
-	const location = new Setting(source).setName("Storage location").setDesc(Platform.isMobile
-		? "Remote server connects to your library over private HTTPS."
-		: "Local folder reads PDFs from a drive or shared folder this computer can access. Remote server connects over private HTTPS and also works on mobile.");
+	const location = new Setting(source).setName("Storage location");
+	location.settingEl.addClass("ol-storage-location");
 	const fields = source.createDiv("ol-source-fields ol-settings-divider");
 	const renderSource = () => {
+		location.setDesc(sourceType === "local"
+			? "Read PDFs from a local or shared folder this computer can access."
+			: sourceType === "server" || Platform.isMobile
+				? "Connect to your library over private HTTPS."
+				: "Choose a local folder or connect to a remote server.");
 		fields.empty();
 		if (!sourceType) return;
 		const local = sourceType === "local";

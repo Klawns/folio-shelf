@@ -16,9 +16,9 @@ Browse your PDF collection in Obsidian, resume reading from your last saved page
 
 ## Installation
 
-The manifest declares Obsidian **1.8.0** or later. Install [PDF++](https://github.com/RyotaUshio/obsidian-pdf-plus) from **Settings → Community plugins**, enable it, and turn on its external PDF support.
+Requires Obsidian **1.8.0** or later. Install and enable [PDF++](https://github.com/RyotaUshio/obsidian-pdf-plus) under **Settings → Community plugins**, then turn on external PDF support.
 
-Once the plugin is listed, search for **Obsidian Library** in **Community plugins**, then select **Install** and **Enable**.
+Obsidian Library is not yet listed in the official Community Plugins directory. To install it with [BRAT](https://github.com/TfTHacker/obsidian42-brat), enable BRAT from **Community plugins**, choose **Add beta plugin** in BRAT, and enter `https://github.com/Klawns/obsidian-library-plugin`. Enable **Obsidian Library** under **Community plugins** if needed.
 
 ### Manual installation
 
@@ -29,14 +29,14 @@ Once the plugin is listed, search for **Obsidian Library** in **Community plugin
 ## Getting started
 
 1. Run **Obsidian Library: Open library** from the command palette or select the library icon in the ribbon.
-2. Choose **Set up library**. On desktop, select **Local folder**, enter the full path to your PDF folder, and select **Load books**. For mobile or shared access, follow the [server setup guide](docs/server-setup.md), then select **Remote server**, enter its HTTPS address, and select **Test connection**.
+2. Choose **Set up library**. On desktop, select **Local folder**, enter the full path to your local or shared folder, and select **Load books**. To connect to a server from desktop or mobile, choose **Remote server**, enter its private HTTPS address, and select **Test connection**. [Server setup guide](docs/server-setup.md)
 3. Open a book. Select **New note** to create a study note, or use **⋯ → Link folder…** to associate the book with a vault folder.
 4. Select **Refresh** after adding PDFs. Remote books appear after the server indexes them.
 
 ## Integrations
 
 - **PDF++** opens the external PDF references and provides the viewer used to capture reading progress.
-- **Fast Note Sync** is optional. Sync Markdown under your [library data folder](docs/configuration.md#data-storage) and any linked study folders to share the remote catalog, reading progress, preferences for individual books, and notes.
+- **Fast Note Sync** can sync your catalog, reading progress, book preferences, and notes between devices. [Data storage and sync](docs/configuration.md#data-storage)
 
 ## Privacy and security
 
