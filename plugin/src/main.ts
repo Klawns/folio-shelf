@@ -1,8 +1,7 @@
 import { Notice, Platform, Plugin, PluginSettingTab, WorkspaceLeaf } from "obsidian";
 import { DataMigration, moveLibraryData, pendingMigration, planMigration, saveMigration } from "./migration";
-import { checkLocalPDF, scanLocalFolder } from "./local";
 import { Book, Progress, endpoint, hasConflict, idPattern, progressHeads, studyFolder } from "./model";
-import { checkPDF, checkServer, fetchCatalog } from "./remote";
+import { RemoteLibraryProvider } from "./remote";
 import { LibraryStorage, Personal } from "./storage";
 import { BookDetailsView, DETAILS_VIEW, LibraryView, VIEW, renderLibrarySettings } from "./view";
 
@@ -82,7 +81,7 @@ export default class LibraryPlugin extends Plugin {
 		this.deviceId = typeof stored === "string" && idPattern.test(stored) ? stored : crypto.randomUUID();
 		this.app.saveLocalStorage(key, this.deviceId);
 		const localFolder: unknown = this.app.loadLocalStorage(LOCAL_FOLDER_KEY);
-		if (!Platform.isMobile && typeof localFolder === "string") this.localFolder = localFolder;
+		if (Platform.isDesktopApp && typeof localFolder === "string") this.localFolder = localFolder;
 		if (this.dataMigration) {
 			await this.run(() => this.changeDataFolder(this.dataMigration!.to, async () => true));
 		}
@@ -230,6 +229,12 @@ export default class LibraryPlugin extends Plugin {
 		}
 	}
 
+	private async localProvider(folder: string) {
+		if (!Platform.isDesktopApp) throw new Error("Local folders are available on desktop.");
+		const { LocalLibraryProvider } = await import("./local");
+		return new LocalLibraryProvider(folder, this.deviceId);
+	}
+
 	refresh(): Promise<void> {
 		if (this.migrating || this.dataMigration || this.changingSource || (!this.localFolder && !this.origin)) return Promise.resolve();
 		const folder = this.localFolder;
@@ -243,7 +248,8 @@ export default class LibraryPlugin extends Plugin {
 		this.error = "";
 		this.redraw();
 		try {
-			const state = await scanLocalFolder(folder, this.deviceId);
+			const provider = await this.localProvider(folder);
+			const state = await provider.readCatalog();
 			if (this.stopped) return;
 			this.setBooks(state.books);
 			this.connected = true;
@@ -258,12 +264,13 @@ export default class LibraryPlugin extends Plugin {
 	}
 
 	async useLocalFolder(value: string): Promise<void> {
-		if (Platform.isMobile) throw new Error("Local folders are available on desktop.");
+		if (!Platform.isDesktopApp) throw new Error("Local folders are available on desktop.");
 		if (this.migrating || this.dataMigration || this.changingSource) throw new Error("Finish the current library change first.");
 		this.changingSource = true;
 		try {
 			await this.refreshTask;
-			const state = await scanLocalFolder(value, this.deviceId);
+			const provider = await this.localProvider(value);
+			const state = await provider.readCatalog();
 			if (this.stopped) return;
 			this.app.saveLocalStorage(LOCAL_FOLDER_KEY, state.folder);
 			this.localFolder = state.folder;
@@ -284,11 +291,12 @@ export default class LibraryPlugin extends Plugin {
 		this.error = "";
 		this.redraw();
 		try {
-			const version = await checkServer(origin);
+			const provider = new RemoteLibraryProvider(origin);
+			const version = await provider.checkVersion();
 			if (this.stopped || this.origin !== origin) return;
 			const state = version && this.hasCatalog(origin, version)
 				? { version, books: this.books }
-				: await fetchCatalog(origin);
+				: await provider.readCatalog();
 			if (this.stopped || this.origin !== origin) return;
 			this.applyCatalog(origin, state);
 			this.connected = true;
@@ -316,13 +324,14 @@ export default class LibraryPlugin extends Plugin {
 		this.changingSource = true;
 		try {
 			await this.refreshTask;
-			const version = await checkServer(origin);
+			const provider = new RemoteLibraryProvider(origin);
+			const version = await provider.checkVersion();
 			const state = version && !this.localFolder && this.hasCatalog(origin, version)
 				? { version, books: this.books }
-				: await fetchCatalog(origin);
+				: await provider.readCatalog();
 			if (this.stopped) return;
 			await this.saveSettings(origin);
-			this.app.saveLocalStorage(LOCAL_FOLDER_KEY, "");
+			if (Platform.isDesktopApp) this.app.saveLocalStorage(LOCAL_FOLDER_KEY, "");
 			this.localFolder = "";
 			this.applyCatalog(origin, state);
 			this.connected = true;
@@ -442,8 +451,8 @@ export default class LibraryPlugin extends Plugin {
 		if (this.pdfPlusStatus() === "disabled") throw new Error("Enable PDF++ to open external references.");
 		if (book.availability === "missing") throw new Error("Book not found on the server.");
 		const linked = this.storage.folderReference(this.storage.personals().get(book.id));
-		if (book.source === "local") await checkLocalPDF(book.readUrl);
-		const available = (book.source === "local" ? Promise.resolve() : checkPDF(book.readUrl)).catch(error => {
+		if (book.source === "local") await (await this.localProvider(this.localFolder)).checkPDF(book.readUrl);
+		const available = (book.source === "local" ? Promise.resolve() : new RemoteLibraryProvider(this.origin).checkPDF(book.readUrl)).catch(error => {
 			throw new Error("Could not load the PDF. " + (error instanceof Error ? error.message : "Check your connection to the library server."));
 		});
 		const [file] = await Promise.all([this.storage.ensureReference(book, linked), available]);

@@ -14,6 +14,7 @@ vi.mock("obsidian", () => {
 		text = "";
 		cls = "";
 		style = { setProperty: () => {} };
+		disabled = false;
 		get options(): Element[] { return this.children; }
 		createSpan(options?: { text?: string }): Element { return this.createEl("span", options); }
 		value = "";
@@ -89,7 +90,7 @@ vi.mock("obsidian", () => {
 			}
 			onChooseSuggestion(_path: string): void {}
 		},
-		Platform: { isMobile: false },
+		Platform: { isMobile: false, isDesktopApp: true },
 		setIcon: () => {},
 		setTooltip: () => {},
 		Setting: class {
@@ -235,19 +236,21 @@ it.each(["modal", "settings"] as const)("loads a desktop folder from the %s sour
 });
 
 it("offers only the remote source and explains shared folders on mobile", () => {
-	const platform = Platform as { isMobile: boolean };
+	const platform = Platform as { isMobile: boolean; isDesktopApp: boolean };
 	const original = platform.isMobile;
 	platform.isMobile = true;
+	platform.isDesktopApp = false;
 	try {
 		const plugin = { localFolder: "D:\\Books", origin: "https://books.example.test", books: [] } as unknown as LibraryPlugin;
 		const view = new LibraryView({} as ConstructorParameters<typeof LibraryView>[0], plugin);
 		renderLibrarySettings(view.contentEl, plugin, vi.fn());
 
-		type Element = { text: string; value: string; children: Element[]; listeners: Map<string, () => unknown>; find(text: string): Element | undefined };
+		type Element = { text: string; value: string; disabled: boolean; children: Element[]; listeners: Map<string, () => unknown>; find(text: string): Element | undefined };
 		const content = view.contentEl as unknown as Element;
 		expect(content.find("Connect to your library over private HTTPS.")).toBeDefined();
 		const selector = content.find("Storage location")!.children.find(child => child.find("Remote server"))!;
-		expect(selector.children.map(option => option.text)).toEqual(["Choose a source", "Remote server"]);
+		expect(selector.children.map(option => option.text)).toEqual(["Choose a source", "Local folder (Desktop only)", "Remote server"]);
+		expect(selector.children[1].disabled).toBe(true);
 		expect(selector.value).toBe("server");
 		expect(content.find("PDF folder")).toBeUndefined();
 		const address = content.find("Server address")!.children.find(child => child.value === plugin.origin)!;
@@ -256,6 +259,7 @@ it("offers only the remote source and explains shared folders on mobile", () => 
 		expect(content.find("Your Linux server needs access to the shared folder. Enter the server’s private HTTPS address here.")).toBeDefined();
 	} finally {
 		platform.isMobile = original;
+		platform.isDesktopApp = true;
 	}
 });
 

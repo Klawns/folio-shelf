@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import LibraryPlugin from "./main";
 import { referencePath } from "./model";
-import { CatalogPendingError, checkServer } from "./remote";
+import { CatalogPendingError, RemoteLibraryProvider } from "./remote";
 
 const requestUrl = vi.hoisted(() => vi.fn());
 
@@ -21,10 +21,10 @@ afterEach(() => {
 it("distinguishes a pending catalog from an unreachable server", async () => {
 	const origin = "https://library.example";
 	requestUrl.mockResolvedValueOnce({ status: 200, json: { version: "0.2.1", catalogReady: false } });
-	await expect(checkServer(origin)).rejects.toBeInstanceOf(CatalogPendingError);
+	await expect(new RemoteLibraryProvider(origin).checkVersion()).rejects.toBeInstanceOf(CatalogPendingError);
 
 	requestUrl.mockRejectedValueOnce(new Error("Network error"));
-	await expect(checkServer(origin)).rejects.toThrow(
+	await expect(new RemoteLibraryProvider(origin).checkVersion()).rejects.toThrow(
 		"Open https://library.example/health on this device and check access to the private network and whether the device trusts the HTTPS certificate.",
 	);
 });

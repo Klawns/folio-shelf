@@ -4,8 +4,8 @@ import { Book, Progress, endpoint, hasConflict, progressHeads, studyFolder } fro
 import { CatalogPendingError } from "./remote";
 import type { Personal } from "./storage";
 
-export const VIEW = "obsidian-library";
-export const DETAILS_VIEW = "obsidian-library-details";
+export const VIEW = "folio-shelf";
+export const DETAILS_VIEW = "folio-shelf-details";
 
 export class BookDetailsView extends ItemView {
 	getViewType(): string { return DETAILS_VIEW; }
@@ -876,14 +876,14 @@ export function renderLibrarySettings(container: HTMLElement, plugin: LibraryPlu
 	});
 	if (!onSuccess) {
 		const header = settings.createEl("header");
-		header.createEl("h2", { text: "Obsidian Library" });
+		header.createEl("h2", { text: "Folio Shelf" });
 		header.createDiv({ text: "Manage your books, reading preferences and study notes.", cls: "ol-secondary" });
 	}
 	const source = settingsGroup(settings, onSuccess ? undefined : "Library source", "server");
 
 	let localPath = plugin.localFolder;
 	let serverAddress = plugin.origin;
-	let sourceType = localPath && !Platform.isMobile ? "local" : serverAddress ? "server" : "";
+	let sourceType = localPath && Platform.isDesktopApp ? "local" : serverAddress ? "server" : "";
 	const location = new Setting(source).setName("Storage location");
 	location.settingEl.addClass("ol-storage-location");
 	const fields = source.createDiv("ol-source-fields ol-settings-divider");
@@ -1008,12 +1008,12 @@ export function renderLibrarySettings(container: HTMLElement, plugin: LibraryPlu
 			steps.createEl("li", { text: "On a Linux computer with access to your PDFs, follow the installation guide to start the library server." });
 			steps.createEl("li", { text: "Use Tailscale Serve or an existing private HTTPS proxy to reach the server from this device." });
 			steps.createEl("li", { text: "Paste the private HTTPS address above and select Test connection." });
-			guide.createEl("a", { text: "Read the full server setup guide", href: "https://github.com/Klawns/obsidian-library-plugin/blob/main/docs/server-setup.md" });
+			guide.createEl("a", { text: "Read the full server setup guide", href: "https://github.com/Klawns/folio-shelf/blob/main/docs/server-setup.md" });
 		}
 	};
 
 	const options: FilterOption[] = [];
-	if (!Platform.isMobile) options.push(["local", "Local folder"]);
+	options.push(["local", Platform.isDesktopApp ? "Local folder" : "Local folder (Desktop only)"]);
 	options.push(["server", "Remote server"]);
 	const sourceIcon = () => sourceType === "local" ? "folder" : "server";
 	const changeSource = (value: string) => {
@@ -1022,7 +1022,7 @@ export function renderLibrarySettings(container: HTMLElement, plugin: LibraryPlu
 	};
 
 	let setSourceDisabled: (disabled: boolean) => void;
-	if (!Platform.isMobile) {
+	if (Platform.isDesktopApp) {
 		const button = location.controlEl.createEl("button", {
 			cls: onSuccess ? "ol-source-select" : "ol-filter-button",
 			attr: { type: "button", "aria-haspopup": "menu", "aria-expanded": "false" },
@@ -1051,8 +1051,10 @@ export function renderLibrarySettings(container: HTMLElement, plugin: LibraryPlu
 			for (const [value, label] of options) selector.addOption(value, label);
 			selector.setValue(sourceType);
 			selector.selectEl.options[0].disabled = true;
+			selector.selectEl.options[1].disabled = true;
 			selector.selectEl.setAttribute("aria-label", "Storage location");
 			selector.onChange(value => {
+				if (value !== "server") return;
 				changeSource(value);
 				if (icon) setIcon(icon, sourceIcon());
 			});

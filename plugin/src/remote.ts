@@ -1,6 +1,8 @@
 import { requestUrl } from "obsidian";
 import { Book, validBooks } from "./model";
 
+import type { LibraryProvider } from "./provider";
+
 export class CatalogPendingError extends Error {}
 
 async function requestServer(origin: string, path: string) {
@@ -11,7 +13,7 @@ async function requestServer(origin: string, path: string) {
 	}
 }
 
-export async function checkServer(origin: string): Promise<string | undefined> {
+async function checkServer(origin: string): Promise<string | undefined> {
 	const response = await requestServer(origin, "/health");
 	if (response.status !== 200 || typeof response.json?.version !== "string") {
 		throw new Error("Unexpected server response (HTTP " + response.status + ").");
@@ -23,7 +25,7 @@ export async function checkServer(origin: string): Promise<string | undefined> {
 	return typeof catalogVersion === "string" && catalogVersion ? catalogVersion : undefined;
 }
 
-export async function fetchCatalog(origin: string): Promise<{ version: string; books: Book[] }> {
+async function fetchCatalog(origin: string): Promise<{ version: string; books: Book[] }> {
 	for (let attempt = 0; attempt < 2; attempt++) {
 		const books: Book[] = [];
 		const cursors = new Set<string>();
@@ -49,7 +51,7 @@ export async function fetchCatalog(origin: string): Promise<{ version: string; b
 	throw new Error("Could not fetch a consistent catalog version.");
 }
 
-export async function checkPDF(url: string): Promise<void> {
+async function checkPDF(url: string): Promise<void> {
 	const response = await requestUrl({ url, method: "HEAD", throw: false });
 	if (response.status === 404) throw new Error("Book not found on the server.");
 	if (response.status === 415) throw new Error("The file is incompatible with the PDF reader.");
@@ -58,5 +60,21 @@ export async function checkPDF(url: string): Promise<void> {
 	if (!Object.entries(response.headers).some(([name, value]) =>
 		name.toLowerCase() === "content-type" && value.toLowerCase().startsWith("application/pdf"))) {
 		throw new Error("The server did not return a compatible PDF.");
+	}
+}
+
+export class RemoteLibraryProvider implements LibraryProvider<{ version: string; books: Book[] }> {
+	constructor(private origin: string) {}
+
+	checkVersion() {
+		return checkServer(this.origin);
+	}
+
+	readCatalog() {
+		return fetchCatalog(this.origin);
+	}
+
+	checkPDF(url: string): Promise<void> {
+		return checkPDF(url);
 	}
 }
