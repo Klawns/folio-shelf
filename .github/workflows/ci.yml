@@ -10,9 +10,13 @@ permissions:
   contents: read
 
 jobs:
-  tests:
-    name: Project tests
-    runs-on: ubuntu-latest
+  plugin:
+    name: Plugin tests
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v5
         with:
@@ -26,6 +30,16 @@ jobs:
         working-directory: plugin
       - run: npm test
         working-directory: plugin
+      - run: npm run build
+        working-directory: plugin
+
+  server:
+    name: Server tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@v6
         with:
           go-version-file: server/go.mod
