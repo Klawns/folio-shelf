@@ -84,7 +84,7 @@
 	max-width: 100%;
 }
 
-.ol-library .ol-filter-button {
+:is(.ol-library, .ol-settings-page) .ol-filter-button {
 	display: inline-flex;
 	align-items: center;
 	gap: var(--size-4-2);
@@ -772,20 +772,24 @@
 }
 
 .ol-layout-segments {
-	display: inline-flex;
-	gap: 2px;
-	padding: 2px;
-	border-radius: var(--radius-m);
+	--ol-segments-radius: 10px;
+	--ol-segments-padding: 2px;
+	display: inline-grid;
+	grid-template-columns: repeat(2, 1fr);
+	gap: var(--ol-segments-padding);
+	padding: var(--ol-segments-padding);
+	border-radius: var(--ol-segments-radius);
 	background: var(--background-primary);
 }
 
 .ol-settings-group .ol-layout-segments button {
 	display: inline-flex;
 	align-items: center;
+	justify-content: center;
 	gap: var(--size-4-1);
 	min-height: 30px;
 	border: 0;
-	border-radius: var(--radius-s);
+	border-radius: calc(var(--ol-segments-radius) - var(--ol-segments-padding));
 	box-shadow: none;
 	background: transparent;
 	color: var(--text-muted);

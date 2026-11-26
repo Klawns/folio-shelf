@@ -97,6 +97,17 @@ vi.mock("obsidian", () => {
 				callback(control);
 				return this;
 			}
+			addButton(callback: (control: object) => void): this {
+				const buttonEl = this.settingEl.createEl("button");
+				callback({
+					buttonEl,
+					setButtonText: (text: string) => buttonEl.setText(text),
+					onClick: (click: () => void) => buttonEl.addEventListener("click", click),
+				});
+				return this;
+			}
+			addSlider(): this { return this; }
+			addToggle(): this { return this; }
 			addText(callback: (control: object) => void): this {
 				const inputEl = this.settingEl.createEl("input");
 				const control = {
@@ -147,11 +158,12 @@ it("renders the library when Obsidian opens the workspace view", async () => {
 	expect(JSON.stringify(content)).toContain("Page 1 of 2");
 });
 
-it("shows the active source fields and loads a desktop folder from the source menu", async () => {
+it.each(["modal", "settings"] as const)("loads a desktop folder from the %s source menu", async surface => {
 	const plugin = {
 		localFolder: "",
 		origin: "https://books.example.test",
 		books: [{}],
+		appearance: { layout: "grid", coverSize: 150 },
 		useLocalFolder: vi.fn(function (this: LibraryPlugin, path: string) {
 			this.localFolder = path;
 			this.connected = true;
@@ -159,7 +171,7 @@ it("shows the active source fields and loads a desktop folder from the source me
 	} as unknown as LibraryPlugin;
 	const view = new LibraryView({} as ConstructorParameters<typeof LibraryView>[0], plugin);
 	const close = vi.fn();
-	renderLibrarySettings(view.contentEl, plugin, close);
+	renderLibrarySettings(view.contentEl, plugin, surface === "modal" ? close : undefined);
 
 	type Element = {
 		value: string;
@@ -186,9 +198,13 @@ it("shows the active source fields and loads a desktop folder from the source me
 	input.value = "D:\\Books";
 	await content.find("Load books")!.listeners.get("click")!();
 	expect(plugin.useLocalFolder).toHaveBeenCalledWith("D:\\Books");
-	expect(content.find("Connected")).toBeDefined();
-	expect(content.find("1 book available")).toBeDefined();
-	expect(close).toHaveBeenCalledOnce();
+	if (surface === "modal") {
+		expect(content.find("Connected")).toBeDefined();
+		expect(content.find("1 book available")).toBeDefined();
+		expect(close).toHaveBeenCalledOnce();
+	} else {
+		expect(content.find("Connected \u00b7 1 book")).toBeDefined();
+	}
 });
 
 it("offers only the remote source in the native mobile selector", () => {

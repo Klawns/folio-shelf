@@ -1350,19 +1350,19 @@ function renderLibrarySettings(container, plugin, onSuccess) {
     renderSource();
   };
   let setSourceDisabled;
-  if (onSuccess && !import_obsidian3.Platform.isMobile) {
+  if (!import_obsidian3.Platform.isMobile) {
     const button = location.controlEl.createEl("button", {
-      cls: "ol-source-select",
+      cls: onSuccess ? "ol-source-select" : "ol-filter-button",
       attr: { type: "button", "aria-haspopup": "menu", "aria-expanded": "false" }
     });
-    const icon = addSourceIcon(button, sourceIcon(), "ol-source-field-icon");
+    const icon = onSuccess ? addSourceIcon(button, sourceIcon(), "ol-source-field-icon") : void 0;
     const label = button.createSpan();
     addSourceIcon(button, "chevron-down", "ol-source-chevron");
     const updateButton = () => {
       const text = options.find(([value]) => value === sourceType)?.[1] ?? "Choose a source";
       label.setText(text);
       button.setAttribute("aria-label", "Storage location: " + text);
-      (0, import_obsidian3.setIcon)(icon, sourceIcon());
+      if (icon) (0, import_obsidian3.setIcon)(icon, sourceIcon());
     };
     updateButton();
     button.addEventListener("click", () => showChoiceMenu(button, options, sourceType, (value) => {
