@@ -632,7 +632,15 @@
 }
 
 .ol-settings-page > .ol-settings-section > .ol-settings-group .setting-item {
-	border-top: 0;
+	border: 0;
+}
+
+.ol-settings-page .ol-settings-group .setting-item:not(.ol-settings-divider:not(:empty))::before {
+	content: none;
+}
+
+.ol-settings-page .ol-settings-group .ol-settings-divider:not(:empty)::before {
+	border: 0;
 }
 
 .ol-settings-group .setting-item-info {
@@ -656,6 +664,7 @@
 	position: relative;
 }
 
+.ol-settings-page .ol-settings-group .ol-settings-divider:not(:empty)::before,
 .ol-settings .ol-settings-divider:not(:empty)::before,
 .ol-source-modal .ol-settings-section::before {
 	content: "";
