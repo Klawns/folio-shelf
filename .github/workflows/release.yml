@@ -1,12 +1,6 @@
-name: Release Obsidian plugin
+name: Release Folio Shelf
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'plugin/**'
-      - 'manifest.json'
-      - '.github/workflows/release.yml'
   workflow_dispatch:
 
 permissions:
@@ -38,35 +32,34 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          latest_tag=$(git tag --list --sort=-version:refname | awk '/^[0-9]+\.[0-9]+\.[0-9]+$/ && !found { print; found=1 }')
-          if [[ -n "$latest_tag" ]] && git merge-base --is-ancestor "$GITHUB_SHA" "$latest_tag^{}"; then
-            latest_sha=$(git rev-parse "$latest_tag^{}")
-            if [[ "$latest_sha" != "$GITHUB_SHA" ]] || [[ "$(gh release view "$latest_tag" --json isDraft --jq .isDraft 2>/dev/null)" == false ]]; then
-              echo "The latest version tag already contains this commit."
-              exit 0
-            fi
-          fi
-          export LATEST_TAG="$latest_tag"
           version=$(node <<'NODE'
           const assert = require('node:assert/strict');
           const manifest = require('./manifest.json');
           const pkg = require('./plugin/package.json');
           const lock = require('./plugin/package-lock.json');
-          assert.match(manifest.version, /^[0-9]+\.[0-9]+\.[0-9]+$/);
+          assert.match(manifest.version, /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/);
           assert.deepEqual(require('./plugin/manifest.json'), manifest);
           assert.equal(pkg.version, manifest.version);
           assert.equal(lock.version, manifest.version);
           assert.equal(lock.packages[''].version, manifest.version);
-          const parse = value => value.split('.').map(Number);
-          const base = parse(manifest.version);
-          const latest = parse(process.env.LATEST_TAG || manifest.version);
-          const firstDifference = latest.findIndex((part, index) => part !== base[index]);
-          const next = firstDifference >= 0 && latest[firstDifference] > base[firstDifference] ? latest : base;
-          next[2]++;
-          console.log(next.join('.'));
+          console.log(manifest.version);
           NODE
           )
-          npm --prefix plugin version "$version" --no-git-tag-version
+          latest_tag=$(git tag --list --sort=-version:refname | awk '/^[0-9]+\.[0-9]+\.[0-9]+$/ && !found { print; found=1 }')
+          if [[ -n "$latest_tag" && "$(printf '%s\n' "$latest_tag" "$version" | sort -V | tail -n 1)" != "$version" ]]; then
+            echo "::error::Commit a manifest version higher than $latest_tag on main."
+            exit 1
+          fi
+          if git show-ref --verify --quiet "refs/tags/$version"; then
+            if [[ "$(git rev-parse "$version^{commit}")" != "$GITHUB_SHA" ]]; then
+              echo "::error::Tag $version already points to another commit. Commit a new version on main."
+              exit 1
+            fi
+            if [[ "$(gh release view "$version" --json isDraft --jq .isDraft 2>/dev/null)" == false ]]; then
+              echo "Release $version already exists for this commit."
+              exit 0
+            fi
+          fi
           echo "PLUGIN_VERSION=$version" >> "$GITHUB_ENV"
           echo "publish=true" >> "$GITHUB_OUTPUT"
       - name: Install dependencies
@@ -84,16 +77,20 @@ jobs:
       - name: Package
         if: steps.prepare.outputs.publish == 'true'
         working-directory: plugin
-        run: Compress-Archive -LiteralPath manifest.json,main.js,styles.css -DestinationPath obsidian-library-plugin.zip
+        run: Compress-Archive -LiteralPath manifest.json,main.js,styles.css,../LICENSE -DestinationPath folio-shelf.zip
       - name: Publish GitHub release
         if: steps.prepare.outputs.publish == 'true'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          if [[ "$(gh api "repos/$GITHUB_REPOSITORY/branches/main" --jq .commit.sha)" != "$GITHUB_SHA" ]]; then
+            echo "::error::main moved after this run started. Run the workflow again from main."
+            exit 1
+          fi
           for delay in 10 30 60 0; do
             if output=$(gh release create "$PLUGIN_VERSION" --target "$GITHUB_SHA" --title "$PLUGIN_VERSION" --generate-notes \
-              plugin/manifest.json plugin/main.js plugin/styles.css plugin/obsidian-library-plugin.zip 2>&1); then
+              plugin/manifest.json plugin/main.js plugin/styles.css plugin/folio-shelf.zip 2>&1); then
               printf '%s\n' "$output"
               exit 0
             fi
