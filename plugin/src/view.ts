@@ -1,6 +1,7 @@
 import { ItemView, Menu, Modal, Platform, Setting, SuggestModal, WorkspaceLeaf, setIcon, setTooltip } from "obsidian";
 import type LibraryPlugin from "./main";
 import { Book, Progress, endpoint, hasConflict, progressHeads, studyFolder } from "./model";
+import { CatalogPendingError } from "./remote";
 import type { Personal } from "./storage";
 
 export const VIEW = "obsidian-library";
@@ -882,23 +883,24 @@ export function renderLibrarySettings(container: HTMLElement, plugin: LibraryPlu
 
 	let localPath = plugin.localFolder;
 	let serverAddress = plugin.origin;
-	let sourceType = localPath && !(onSuccess && Platform.isMobile) ? "local" : serverAddress ? "server" : "";
-	const location = new Setting(source).setName("Storage location");
-	if (!onSuccess) location.setDesc("Choose where your books are stored.");
+	let sourceType = localPath && !Platform.isMobile ? "local" : serverAddress ? "server" : "";
+	const location = new Setting(source).setName("Storage location").setDesc(Platform.isMobile
+		? "Remote server connects to your library over private HTTPS."
+		: "Local folder reads PDFs from a drive or shared folder this computer can access. Remote server connects over private HTTPS and also works on mobile.");
 	const fields = source.createDiv("ol-source-fields ol-settings-divider");
 	const renderSource = () => {
 		fields.empty();
 		if (!sourceType) return;
 		const local = sourceType === "local";
 		const row = new Setting(fields).setName(local ? "PDF folder" : "Server address")
-			.setDesc(local ? "PDFs are scanned and opened in place with PDF++." : "HTTPS endpoint of your library server.");
+			.setDesc(local ? "Enter an absolute path, such as C:\\Books or \\\\files.home\\shares\\books." : "Enter the private HTTPS address of your library server.");
 		row.settingEl.addClass("ol-source-setting");
 		row.addText(input => {
 			if (onSuccess) {
 				addSourceIcon(row.controlEl, local ? "folder" : "link", "ol-source-field-icon");
 				row.settingEl.appendChild(row.descEl);
 			}
-			input.setPlaceholder(local ? "C:/Books" : "https://server.example:9443")
+			input.setPlaceholder(local ? "C:\\Books" : "https://library.example.ts.net")
 				.setValue(local ? localPath : serverAddress);
 			input.inputEl.type = "text";
 			if (!local) input.inputEl.inputMode = "url";
@@ -918,16 +920,29 @@ export function renderLibrarySettings(container: HTMLElement, plugin: LibraryPlu
 					statusDetail.setText(detail);
 				} else status.setText(message);
 			};
+			const serverOrigin = (value: string) => {
+				if (/^(?:smb:\/\/|\\\\|\/\/)/i.test(value.trim())) {
+					throw new Error(Platform.isMobile
+						? "Your Linux server needs access to the shared folder. Enter the server’s private HTTPS address here."
+						: "Choose Local folder to use this shared folder directly, or enter your server’s private HTTPS address.");
+				}
+				try {
+					return endpoint(value);
+				} catch {
+					throw new Error("Enter a valid HTTPS server address.");
+				}
+			};
 			const show = () => {
 				input.inputEl.setAttribute("aria-invalid", "false");
 				const value = input.getValue();
 				let active = local && Boolean(plugin.localFolder) && value === plugin.localFolder;
 				if (!local && value.trim()) {
 					try {
-						active = !plugin.localFolder && endpoint(value) === plugin.origin;
-					} catch {
+						const origin = serverOrigin(value);
+						active = !plugin.localFolder && origin === plugin.origin;
+					} catch (error) {
 						input.inputEl.setAttribute("aria-invalid", "true");
-						setState("error", "Enter a valid HTTPS server address.");
+						setState("error", (error as Error).message);
 						return;
 					}
 				}
@@ -961,14 +976,15 @@ export function renderLibrarySettings(container: HTMLElement, plugin: LibraryPlu
 						localPath = plugin.localFolder;
 						input.setValue(localPath);
 					} else {
-						await plugin.connect(input.getValue());
+						await plugin.connect(serverOrigin(input.getValue()));
 						serverAddress = plugin.origin;
 						input.setValue(serverAddress);
 					}
 					show();
 					if (!plugin.error) onSuccess?.();
 				} catch (error) {
-					setState("error", error instanceof Error ? error.message : "Could not set up the library source.");
+					setState(error instanceof CatalogPendingError ? "warning" : "error",
+						error instanceof Error ? error.message : "Could not set up the library source.");
 				} finally {
 					action.disabled = false;
 					setSourceDisabled(false);
@@ -984,7 +1000,11 @@ export function renderLibrarySettings(container: HTMLElement, plugin: LibraryPlu
 			}
 			summary.createSpan({ text: "Server setup guide" });
 			if (onSuccess) addSourceIcon(summary, "chevron-right", "ol-source-chevron");
-			guide.createEl("p", { text: "Run the Obsidian Library server on a computer that can read your PDF folder. Make the service available over HTTPS and enter its base address here." });
+			const steps = guide.createEl("ol");
+			steps.createEl("li", { text: "On a Linux computer with access to your PDFs, follow the installation guide to start the library server." });
+			steps.createEl("li", { text: "Use Tailscale Serve or an existing private HTTPS proxy to reach the server from this device." });
+			steps.createEl("li", { text: "Paste the private HTTPS address above and select Test connection." });
+			guide.createEl("a", { text: "Read the full server setup guide", href: "https://github.com/Klawns/obsidian-library-plugin/blob/main/docs/server-setup.md" });
 		}
 	};
 

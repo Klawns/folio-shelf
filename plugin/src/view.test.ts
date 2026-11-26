@@ -200,6 +200,9 @@ it.each(["modal", "settings"] as const)("loads a desktop folder from the %s sour
 	address.value = "http://books.example.test";
 	address.listeners.get("input")!();
 	expect(content.find("Enter a valid HTTPS server address.")).toBeDefined();
+	address.value = "\\\\files.home\\shares\\books";
+	address.listeners.get("input")!();
+	expect(content.find("Choose Local folder to use this shared folder directly, or enter your server’s private HTTPS address.")).toBeDefined();
 	const selector = content.find("Storage location")!.children.find(child => child.find("Remote server"))!;
 	selector.listeners.get("click")!();
 	expect(showMenu).toHaveBeenLastCalledWith({ x: 10, y: 54, width: 200, overlap: true, left: false }, undefined);
@@ -223,21 +226,25 @@ it.each(["modal", "settings"] as const)("loads a desktop folder from the %s sour
 	}
 });
 
-it("offers only the remote source in the native mobile selector", () => {
+it("offers only the remote source and explains shared folders on mobile", () => {
 	const platform = Platform as { isMobile: boolean };
 	const original = platform.isMobile;
 	platform.isMobile = true;
 	try {
-		const plugin = { localFolder: "D:\\Books", origin: "", books: [] } as unknown as LibraryPlugin;
+		const plugin = { localFolder: "D:\\Books", origin: "https://books.example.test", books: [] } as unknown as LibraryPlugin;
 		const view = new LibraryView({} as ConstructorParameters<typeof LibraryView>[0], plugin);
 		renderLibrarySettings(view.contentEl, plugin, vi.fn());
 
-		type Element = { text: string; value: string; children: Element[]; find(text: string): Element | undefined };
+		type Element = { text: string; value: string; children: Element[]; listeners: Map<string, () => unknown>; find(text: string): Element | undefined };
 		const content = view.contentEl as unknown as Element;
-		const selector = content.find("Storage location")!.children.find(child => child.find("Choose a source"))!;
+		const selector = content.find("Storage location")!.children.find(child => child.find("Remote server"))!;
 		expect(selector.children.map(option => option.text)).toEqual(["Choose a source", "Remote server"]);
-		expect(selector.value).toBe("");
+		expect(selector.value).toBe("server");
 		expect(content.find("PDF folder")).toBeUndefined();
+		const address = content.find("Server address")!.children.find(child => child.value === plugin.origin)!;
+		address.value = "smb://files.home/books";
+		address.listeners.get("input")!();
+		expect(content.find("Your Linux server needs access to the shared folder. Enter the server’s private HTTPS address here.")).toBeDefined();
 	} finally {
 		platform.isMobile = original;
 	}

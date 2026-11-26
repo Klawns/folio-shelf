@@ -14,10 +14,15 @@ from datetime import datetime
 
 
 PROJECT = Path(__file__).resolve().parents[2]
+CHECK_PDFS = """test -r /books && test -x /books
+unreadable=$(find /books -type f -iname '*.pdf' -exec sh -c 'for pdf do test -r "$pdf" || printf "."; done' sh {} +)
+test -z "$unreadable" || { echo "O container não consegue ler todos os PDFs." >&2; exit 1; }"""
 
 
 def local_directory(value: str) -> Path:
     value = value.strip().replace("\\", "/")
+    if value.lower().startswith("smb://"):
+        value = value[4:]
     if any(ord(char) < 32 for char in value):
         raise ValueError("O caminho contém caracteres de controle.")
     if value.startswith("//"):
@@ -26,9 +31,13 @@ def local_directory(value: str) -> Path:
         if not separator or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", share):
             raise ValueError("Informe o compartilhamento no formato //servidor/pasta.")
         local_ips = set(subprocess.check_output(["hostname", "-I"], text=True).split())
-        resolved_ips = {entry[4][0] for entry in socket.getaddrinfo(host, None)}
-        if not (resolved_ips & local_ips) and host.lower() not in {socket.gethostname().lower(), "localhost"}:
-            raise ValueError("O compartilhamento precisa estar no mesmo Raspberry Pi.")
+        if host.lower() not in {socket.gethostname().lower(), "localhost"}:
+            try:
+                resolved_ips = {entry[4][0] for entry in socket.getaddrinfo(host, None)}
+            except socket.gaierror as error:
+                raise ValueError("Não foi possível localizar o servidor Samba. Monte compartilhamentos remotos no Linux e informe o caminho absoluto da montagem.") from error
+            if not (resolved_ips & local_ips):
+                raise ValueError("Monte o compartilhamento remoto no Linux e informe o caminho absoluto da montagem.")
         share_directory = subprocess.check_output([
             "testparm", "-s", "--section-name=" + share, "--parameter-name=path",
         ], text=True, stderr=subprocess.DEVNULL).strip()
@@ -41,20 +50,25 @@ def local_directory(value: str) -> Path:
     elif value.startswith("/"):
         target = Path(value).resolve(strict=True)
     else:
-        raise ValueError("Informe um caminho absoluto no Pi ou um compartilhamento Samba.")
+        raise ValueError("Informe um caminho absoluto no Linux ou um compartilhamento Samba local.")
     if target == Path("/") or not target.is_dir():
         raise ValueError("Escolha uma pasta existente dedicada aos livros.")
     return target
 
 
-def compose(env_file: Path, *args: str) -> None:
-    command = ["docker", "compose", "-f", str(PROJECT / "docker-compose.yml"), "--env-file", str(env_file), *args]
+def docker(*args: str, env: dict | None = None) -> None:
+    command = ["docker", *args]
     if os.geteuid() != 0:
         command.insert(0, "sudo")
+    subprocess.run(command, cwd=PROJECT, env=env, check=True)
+
+
+def compose(env_file: Path, *args: str) -> None:
     environment = dict(os.environ)
-    for key in ("LIBRARY_BOOKS_DIR", "LIBRARY_BOOKS_GID", "COMPOSE_PROJECT_NAME"):
+    for key in ("LIBRARY_BOOKS_DIR", "LIBRARY_BOOKS_GID", "LIBRARY_STATE_DIR", "LIBRARY_PUBLIC_URL",
+                "LIBRARY_UID", "LIBRARY_GID", "COMPOSE_PROJECT_NAME"):
         environment.pop(key, None)
-    subprocess.run(command, cwd=PROJECT, env=environment, check=True)
+    docker("compose", "-f", str(PROJECT / "docker-compose.yml"), "--env-file", str(env_file), *args, env=environment)
 
 
 def env_with_directory(contents: str, target: Path) -> str:
@@ -83,9 +97,7 @@ def configure(target: Path) -> None:
     try:
         compose(staged, "config", "--quiet")
         compose(staged, "run", "--rm", "--no-deps", "--entrypoint", "/bin/sh", "obsidian-library", "-ec",
-                """test -r /books && test -x /books
-unreadable=$(find /books -type f -iname '*.pdf' -exec sh -c 'for pdf do test -r "$pdf" || printf "."; done' sh {} +)
-test -z "$unreadable" || { echo "O container não consegue ler todos os PDFs." >&2; exit 1; }""")
+                CHECK_PDFS)
         if not marker.exists():
             try:
                 with marker.open("xb") as marker_file:
@@ -113,7 +125,7 @@ def main() -> None:
     args = parser.parse_args()
     try:
         target = local_directory(args.pasta if args.pasta is not None else input("Pasta dos PDFs: "))
-        print(f"Pasta no Raspberry Pi: {target}", flush=True)
+        print(f"Pasta no Linux: {target}", flush=True)
         configure(target)
     except (OSError, ValueError, subprocess.CalledProcessError) as error:
         parser.exit(1, f"Não foi possível configurar a pasta: {error}\n")

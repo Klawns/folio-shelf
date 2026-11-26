@@ -48,8 +48,12 @@ export async function scanLocalFolder(input: string, deviceId: string): Promise<
 				} else if (entry.isFile() && /\.pdf$/i.test(entry.name)) {
 					const info = await fs.stat(absolute);
 					if (info.size <= 300 && /^(?:https?:\/\/|file:\/\/\/)/.test(await fs.readFile(absolute, "utf8"))) continue;
-					const readUrl = pathToFileURL(absolute).href;
-					const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(deviceId + "\n" + readUrl));
+					const fileUrl = pathToFileURL(absolute).href;
+					// PDF++ strips file:/// and passes the remaining path to Obsidian's file protocol.
+					const readUrl = absolute.startsWith("\\\\")
+						? "file://///" + absolute.slice(2).split("\\").map(encodeURIComponent).join("/")
+						: fileUrl;
+					const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(deviceId + "\n" + fileUrl));
 					const hex = Array.from(new Uint8Array(digest).slice(0, 16), byte => byte.toString(16).padStart(2, "0")).join("");
 					const id = [hex.slice(0, 8), hex.slice(8, 12), hex.slice(12, 16), hex.slice(16, 20), hex.slice(20)].join("-");
 					books.push({
@@ -71,7 +75,8 @@ export async function checkLocalPDF(url: string): Promise<void> {
 	const { fileURLToPath } = require("node:url");
 	const { stat } = require("node:fs/promises");
 	try {
-		if ((await stat(fileURLToPath(url))).isFile()) return;
+		const path = url.startsWith("file://///") ? decodeURIComponent(url.slice(8)) : fileURLToPath(url);
+		if ((await stat(path)).isFile()) return;
 	} catch {
 		// The file may have moved since the last scan.
 	}

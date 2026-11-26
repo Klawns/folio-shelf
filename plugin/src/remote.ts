@@ -1,13 +1,23 @@
 import { requestUrl } from "obsidian";
 import { Book, validBooks } from "./model";
 
+export class CatalogPendingError extends Error {}
+
+async function requestServer(origin: string, path: string) {
+	try {
+		return await requestUrl({ url: origin + path, throw: false });
+	} catch {
+		throw new Error(`Could not reach the library server. Open ${origin}/health on this device and check access to the private network and whether the device trusts the HTTPS certificate.`);
+	}
+}
+
 export async function checkServer(origin: string): Promise<string | undefined> {
-	const response = await requestUrl({ url: origin + "/health", throw: false });
+	const response = await requestServer(origin, "/health");
 	if (response.status !== 200 || typeof response.json?.version !== "string") {
 		throw new Error("Unexpected server response (HTTP " + response.status + ").");
 	}
 	if (response.json.catalogReady !== true) {
-		throw new Error("The server is reachable. The library is indexing or the disk is unavailable.");
+		throw new CatalogPendingError("The server is reachable. The library is indexing or the disk is unavailable. Try again after indexing finishes.");
 	}
 	const catalogVersion: unknown = response.json.catalogVersion;
 	return typeof catalogVersion === "string" && catalogVersion ? catalogVersion : undefined;
@@ -20,10 +30,7 @@ export async function fetchCatalog(origin: string): Promise<{ version: string; b
 		let version: string | undefined;
 		let cursor = "";
 		do {
-			const response = await requestUrl({
-				url: origin + "/api/v1/books" + (cursor ? "?cursor=" + encodeURIComponent(cursor) : ""),
-				throw: false,
-			});
+			const response = await requestServer(origin, "/api/v1/books" + (cursor ? "?cursor=" + encodeURIComponent(cursor) : ""));
 			if (response.status === 409) break;
 			if (response.status !== 200) throw new Error("Catalog request failed (HTTP " + response.status + ").");
 			const data = response.json;

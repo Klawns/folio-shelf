@@ -13,7 +13,10 @@ vi.mock("obsidian", () => ({
 	requestUrl: vi.fn(),
 }));
 
-it("indexes and opens external PDFs without an HTTP request and keeps the source after a failed switch", async () => {
+const sources = process.platform === "win32" && process.env.OBSIDIAN_TEST_UNC === "1"
+	? ["local", "UNC"] : ["local"];
+
+it.each(sources)("indexes and opens external PDFs from a %s path and keeps the source after a failed switch", async source => {
 	const folder = await mkdtemp(join(tmpdir(), "obsidian-library-test-"));
 	try {
 		const category = join(folder, "Computer Science");
@@ -32,16 +35,22 @@ it("indexes and opens external PDFs without an HTTP request and keeps the source
 			},
 			storage: { personals: () => new Map(), folderReference: () => undefined, ensureReference },
 		});
-		await plugin.useLocalFolder(folder);
+		const sourcePath = source === "UNC" ? folder.replace(/^([a-z]):\\/i, "\\\\localhost\\$1$\\") : folder;
+		await plugin.useLocalFolder(sourcePath);
 		expect(plugin.books).toHaveLength(1);
 		const [book] = plugin.books;
 		expect(book).toMatchObject({ source: "local", title: "Book #1", category: "Computer Science" });
 		expect(book.readUrl).toMatch(/^file:\/\/\/.*Book%20%231\.PDF$/);
+		if (source === "UNC") expect(book.readUrl).toMatch(/^file:\/{5}localhost\//i);
 		await plugin.openBook(book);
 		expect(requestUrl).not.toHaveBeenCalled();
 		expect(ensureReference).toHaveBeenCalledWith(book, undefined);
 		expect(openFile).toHaveBeenCalledWith(reference, { active: true });
-		await expect(plugin.useLocalFolder(join(folder, "missing"))).rejects.toThrow("Could not scan this folder");
+		await expect(plugin.useLocalFolder(join(sourcePath, "missing"))).rejects.toThrow("Could not scan this folder");
+		if (source === "UNC") {
+			await expect(plugin.useLocalFolder("\\\\localhost\\obsidian-library-missing-test-share"))
+				.rejects.toThrow("Could not scan this folder");
+		}
 		await plugin.refresh();
 		expect(plugin.books[0].id).toBe(book.id);
 		await rm(join(category, "Book #1.PDF"));
@@ -51,4 +60,4 @@ it("indexes and opens external PDFs without an HTTP request and keeps the source
 	} finally {
 		await rm(folder, { recursive: true, force: true });
 	}
-});
+}, 40_000);
