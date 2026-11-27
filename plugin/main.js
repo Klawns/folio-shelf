@@ -604,7 +604,7 @@ var LibraryStorage = class {
     const previousReference = this.folderReference(values);
     const files = folder + "/Files";
     const notes = folder + "/Notes";
-    const existing = this.findNote(book) ?? await this.noteAt(notes + "/" + fileName + ".md", book) ?? (values?.folder ? await this.noteAt(values.folder + "/" + fileName + ".md", book) : void 0);
+    const existing = this.findNote(book) ?? await this.recordInFolder(book, notes, fileName) ?? (values?.organized ? await this.recordInFolder(book, values.folder + "/Notes", fileName) : void 0) ?? (values?.folder ? await this.recordInFolder(book, values.folder, fileName) : void 0);
     await this.ensureFolder(folder);
     const occupied = this.app.vault.getAbstractFileByPath(files + "/" + fileName + ".pdf");
     const alreadyLinked = occupied instanceof import_obsidian3.TFile && occupied.stat.size <= 300 && new TextDecoder().decode(await this.app.vault.readBinary(occupied)) === book.readUrl;
@@ -615,7 +615,9 @@ var LibraryStorage = class {
     await this.ensureFolder(notes);
     if (existing && existing.path !== notes + "/" + existing.name) {
       let target = notes + "/" + existing.name;
-      if (this.app.vault.getAbstractFileByPath(target)) target = notes + "/" + fileName + " - Book record.md";
+      if (this.app.vault.getAbstractFileByPath(target)) {
+        target = notes + "/Book record - " + fileName + " (" + book.id.slice(0, 8) + ").md";
+      }
       if (this.app.vault.getAbstractFileByPath(target)) throw new Error("A note with that name already exists in the folder.");
       await this.app.fileManager.renameFile(existing, target);
     }
@@ -633,6 +635,11 @@ var LibraryStorage = class {
     const file = this.app.vault.getAbstractFileByPath(path);
     if (file instanceof import_obsidian3.TFile && this.isBookRecord(await this.metadata(path), book, path)) return file;
   }
+  async recordInFolder(book, folder, fileName) {
+    const prefix = folder + "/Book record - " + fileName;
+    const suffix = " (" + book.id.slice(0, 8) + ").md";
+    return await this.noteAt(prefix + ".md", book) ?? await this.noteAt(prefix + suffix, book) ?? await this.noteAt(folder + "/" + fileName + ".md", book) ?? await this.noteAt(folder + "/" + fileName + " - Book record" + suffix, book);
+  }
   async findOrCreateNote(book, root) {
     await this.ensureReferenceInternal(book);
     const existing = this.findNote(book);
@@ -647,12 +654,13 @@ var LibraryStorage = class {
   }
   async createNote(book, folder, fileName) {
     await this.ensureFolder(folder);
-    let path = folder + "/" + fileName + ".md";
+    const existing = await this.recordInFolder(book, folder, fileName);
+    if (existing) return existing;
+    const basePath = folder + "/Book record - " + fileName;
+    let path = basePath + ".md";
     const link = this.pdfLink(book);
     if (this.app.vault.getAbstractFileByPath(path)) {
-      const current = await this.noteAt(path, book);
-      if (current) return current;
-      path = folder + "/" + fileName + " - Book record (" + book.id.slice(0, 8) + ").md";
+      path = basePath + " (" + book.id.slice(0, 8) + ").md";
     }
     const fields = { Title: book.title, Author: book.author ?? null, Category: book.category, Status: "Not started", PDF: link };
     const header = Object.entries(fields).map(([key, value]) => key + ": " + JSON.stringify(value)).join("\n");

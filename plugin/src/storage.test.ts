@@ -138,18 +138,29 @@ it("uses the typed filename for a study note and preserves an existing chapter",
 	await expect(storage.createStudyNote(book, ficha, "Capítulo 1", "")).rejects.toThrow("A note with that name already exists");
 });
 
-it("creates a short properties-only ficha and a PDF reference in the selected folder", async () => {
+it("creates a prefixed book record with the original title and reopens it", async () => {
 	const { storage, files, content, create, frontmatter } = testVault();
 	const misplacedState = create("Estudos/" + book.id + ".md", "Estado que foi movido por uma versão anterior.");
 	frontmatter.set(misplacedState, { bookId: book.id, folder: "Estudos/Redes", fileName: "Meu livro" });
-	await storage.linkFolder(book, "Estudos/Redes");
-	const ficha = content.get(files.get("Estudos/Redes/Notes/Meu livro.md") as TFile);
+	const record = await storage.linkFolder(book, "Estudos/Redes");
+	expect(record.path).toBe("Estudos/Redes/Notes/Book record - Meu livro.md");
+	expect(await storage.note(book, "Estudos")).toBe(record);
+	const ficha = content.get(record);
 	expect(ficha).toContain('Title: "Meu livro"');
 	expect(ficha).toContain("PDF: \"[[" + referencePath(book.id));
 	expect(ficha).not.toContain("bookId:");
 	expect(ficha?.endsWith("\n---\n")).toBe(true);
 	expect(misplacedState.path).toBe("Estudos/" + book.id + ".md");
 	expect(content.get(files.get("Estudos/Redes/Files/Meu livro.pdf") as TFile)).toBe(book.readUrl);
+});
+
+it("reuses an unprefixed book record before Obsidian indexes it", async () => {
+	const { storage, create } = testVault();
+	const original = create("Study/Notes/Meu livro.md",
+		'---\nTitle: "Meu livro"\nPDF: "[[' + referencePath(book.id) + '|Open book]]"\n---\n');
+
+	expect(await storage.linkFolder(book, "Study")).toBe(original);
+	expect(original.path).toBe("Study/Notes/Meu livro.md");
 });
 
 function pluginFor(app: App) {
