@@ -2,7 +2,7 @@
 
 ## Library sources and preferences
 
-In **Settings → Obsidian Library**, select a source, choose a default study notes folder and optional Markdown template, and set the default layout, cover size, and progress visibility.
+In **Settings → Folio Shelf**, select a source, choose a default study notes folder and optional Markdown template, and set the default layout, cover size, and progress visibility.
 
 **Local folder** scans an absolute path and its subfolders on desktop. The folder selection is device-local. Generated references contain absolute file URLs and require access to the referenced path.
 
@@ -10,7 +10,7 @@ In **Settings → Obsidian Library**, select a source, choose a default study no
 
 ## Data storage
 
-In **Settings → Obsidian Library → Data storage**, enter a vault-relative **Library data folder** and press **Enter** or leave the field. Selecting a folder in the picker also validates it immediately. New vaults default to `Library/`. Existing vaults continue using their current location until you change the folder. For example, choosing `04 Diversos/Biblioteca` puts the catalog, reading progress, per-book preferences, hidden-book markers, and PDF references under that folder’s `_state/` and `_refs/` directories.
+In **Settings → Folio Shelf → Data storage**, enter a vault-relative **Library data folder** and press **Enter** or leave the field. Selecting a folder in the picker also validates it immediately. New vaults default to `Library/`. Existing vaults continue using their current location until you change the folder. For example, choosing `04 Diversos/Biblioteca` puts the catalog, reading progress, per-book preferences, hidden-book markers, and PDF references under that folder’s `_state/` and `_refs/` directories.
 
 Choose a destination without either internal directory. If the current folder has data, confirm the displayed source and destination. The plugin moves those two directories and updates its note links. Study notes, book records, and original PDFs stay in place. **Study notes → Notes folder** still controls where new book records and study notes are created.
 
@@ -18,7 +18,7 @@ If Obsidian closes during a move, the plugin resumes when it starts again. If it
 
 ### Fast Note Sync
 
-Pause Fast Note Sync on every device and update Obsidian Library on each one before moving data. Keep synchronization paused while setting the same data folder on each device. Check that the new folder is included in your sync rules and that the library opens from it on each device before resuming synchronization.
+Pause Fast Note Sync on every device and update Folio Shelf on each one before moving data. Keep synchronization paused while setting the same data folder on each device. Check that the new folder is included in your sync rules and that the library opens from it on each device before resuming synchronization.
 
 ## Book state
 

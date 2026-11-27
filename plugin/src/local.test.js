@@ -7,7 +7,7 @@ import LibraryPlugin from "./main";
 
 vi.mock("obsidian", () => ({
 	ItemView: class {},
-	Platform: { isMobile: false },
+	Platform: { isMobile: false, isDesktopApp: true },
 	Plugin: class {},
 	PluginSettingTab: class {},
 	requestUrl: vi.fn(),

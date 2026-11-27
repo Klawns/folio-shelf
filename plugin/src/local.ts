@@ -1,3 +1,5 @@
+import { Platform } from "obsidian";
+import type { LibraryProvider } from "./provider";
 import type { Book } from "./model";
 
 interface Entry {
@@ -27,7 +29,7 @@ declare function require(name: "node:url"): {
 	fileURLToPath(url: string): string;
 };
 
-export async function scanLocalFolder(input: string, deviceId: string): Promise<{ folder: string; books: Book[] }> {
+async function scanLocalFolder(input: string, deviceId: string): Promise<{ folder: string; books: Book[] }> {
 	const fs = require("node:fs/promises");
 	const path = require("node:path");
 	const { pathToFileURL } = require("node:url");
@@ -71,7 +73,7 @@ export async function scanLocalFolder(input: string, deviceId: string): Promise<
 	return { folder, books };
 }
 
-export async function checkLocalPDF(url: string): Promise<void> {
+async function checkLocalPDF(url: string): Promise<void> {
 	const { fileURLToPath } = require("node:url");
 	const { stat } = require("node:fs/promises");
 	try {
@@ -81,4 +83,18 @@ export async function checkLocalPDF(url: string): Promise<void> {
 		// The file may have moved since the last scan.
 	}
 	throw new Error("Could not find this PDF. Check the folder and refresh the library.");
+}
+
+export class LocalLibraryProvider implements LibraryProvider<{ folder: string; books: Book[] }> {
+	constructor(private folder: string, private deviceId: string) {}
+
+	async readCatalog() {
+		if (!Platform.isDesktopApp) throw new Error("Local folders are available on desktop.");
+		return scanLocalFolder(this.folder, this.deviceId);
+	}
+
+	async checkPDF(url: string): Promise<void> {
+		if (!Platform.isDesktopApp) throw new Error("Local folders are available on desktop.");
+		await checkLocalPDF(url);
+	}
 }

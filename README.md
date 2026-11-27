@@ -1,8 +1,8 @@
-# Obsidian Library
+# Folio Shelf
 
 Browse your PDF collection in Obsidian, resume reading from your last saved page, and keep study notes linked to your books. Your PDFs stay in a folder on your desktop or on a server you run.
 
-![Obsidian Library desktop catalog with search, filters, and reading progress](docs/images/desktop-shots.png)
+![Folio Shelf desktop catalog with search, filters, and reading progress](docs/images/desktop-shots.png)
 
 [Desktop reading progress and book grid](docs/images/desktop-reading.png)
 
@@ -18,18 +18,18 @@ Browse your PDF collection in Obsidian, resume reading from your last saved page
 
 Requires Obsidian **1.8.0** or later. Install and enable [PDF++](https://github.com/RyotaUshio/obsidian-pdf-plus) under **Settings → Community plugins**, then turn on external PDF support.
 
-Obsidian Library is not yet listed in the official Community Plugins directory. To install it with [BRAT](https://github.com/TfTHacker/obsidian42-brat), enable BRAT from **Community plugins**, choose **Add beta plugin** in BRAT, and enter `https://github.com/Klawns/obsidian-library-plugin`. Enable **Obsidian Library** under **Community plugins** if needed.
+Folio Shelf is not yet listed in the official Community Plugins directory. To install it with [BRAT](https://github.com/TfTHacker/obsidian42-brat), enable BRAT from **Community plugins**, choose **Add beta plugin** in BRAT, and enter `https://github.com/Klawns/folio-shelf`. Enable **Folio Shelf** under **Community plugins** if needed.
 
 ### Manual installation
 
-1. Download the ZIP from [GitHub Releases](https://github.com/Klawns/obsidian-library-plugin/releases) or [build from source](docs/development.md).
-2. Copy `manifest.json`, `main.js`, and `styles.css` into `.obsidian/plugins/obsidian-library/` inside your vault.
-3. Reload Obsidian and enable **Obsidian Library** under **Settings → Community plugins**.
+1. Download the ZIP from [GitHub Releases](https://github.com/Klawns/folio-shelf/releases) or [build from source](docs/development.md).
+2. Copy `manifest.json`, `main.js`, and `styles.css` into `.obsidian/plugins/folio-shelf/` inside your vault.
+3. Reload Obsidian and enable **Folio Shelf** under **Settings → Community plugins**.
 
 ## Getting started
 
-1. Run **Obsidian Library: Open library** from the command palette or select the library icon in the ribbon.
-2. Choose **Set up library**. On desktop, select **Local folder**, enter the full path to your local or shared folder, and select **Load books**. To connect to a server from desktop or mobile, choose **Remote server**, enter its private HTTPS address, and select **Test connection**. [Server setup guide](docs/server-setup.md)
+1. Run **Folio Shelf: Open library** from the command palette or select the library icon in the ribbon.
+2. Choose **Set up library**. On desktop, select **Local folder**, enter the full path to your local or shared folder, and select **Load books**. To connect to a server from desktop or mobile, choose **Remote server**, enter its private HTTPS address, and select **Test connection**. On mobile, **Local folder (Desktop only)** is shown as a disabled option. [Server setup guide](docs/server-setup.md) / [Compatibility and validation](docs/compatibility.md)
 3. Open a book. Select **New note** to create a study note, or use **⋯ → Link folder…** to associate the book with a vault folder.
 4. Select **Refresh** after adding PDFs. Remote books appear after the server indexes them.
 
@@ -52,4 +52,4 @@ The server has no built-in authentication. Restrict access to trusted devices us
 
 ## License
 
-This repository has no declared license.
+Distributed under the [MIT License](LICENSE).
