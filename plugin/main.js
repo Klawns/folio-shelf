@@ -27,6 +27,7 @@ __export(local_exports, {
   LocalLibraryProvider: () => LocalLibraryProvider
 });
 async function scanLocalFolder(input, deviceId) {
+  if (!import_obsidian5.Platform.isDesktopApp) throw new Error("Local folders are available on desktop.");
   const fs = require("node:fs/promises");
   const path = require("node:path");
   const { pathToFileURL } = require("node:url");
@@ -74,6 +75,7 @@ async function scanLocalFolder(input, deviceId) {
   return { folder, books };
 }
 async function checkLocalPDF(url) {
+  if (!import_obsidian5.Platform.isDesktopApp) throw new Error("Local folders are available on desktop.");
   const { fileURLToPath } = require("node:url");
   const { stat } = require("node:fs/promises");
   try {
@@ -93,11 +95,9 @@ var init_local = __esm({
         this.deviceId = deviceId;
       }
       async readCatalog() {
-        if (!import_obsidian5.Platform.isDesktopApp) throw new Error("Local folders are available on desktop.");
         return scanLocalFolder(this.folder, this.deviceId);
       }
       async checkPDF(url) {
-        if (!import_obsidian5.Platform.isDesktopApp) throw new Error("Local folders are available on desktop.");
         await checkLocalPDF(url);
       }
     };
@@ -152,10 +152,13 @@ function referencePath(id, root = ROOT) {
 function slug(title) {
   return title.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 72) || "book";
 }
+function isControlCharacter(character) {
+  return character.charCodeAt(0) < 32;
+}
 function studyFolder(input, dataRoot = ROOT) {
   const path = input.trim().replace(/\\/g, "/");
   const normalized = path.toLowerCase();
-  if (!path || path.split("/").some((segment) => !segment || segment.startsWith(".") || /[<>:"|?*#[\]\x00-\x1f]/.test(segment) || /[. ]$/.test(segment) || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(segment)) || [ROOT, LEGACY_ROOT, dataRoot].some((root) => {
+  if (!path || path.split("/").some((segment) => !segment || segment.startsWith(".") || /[<>:"|?*#[\]]/.test(segment) || Array.from(segment).some(isControlCharacter) || /[. ]$/.test(segment) || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(segment)) || [ROOT, LEGACY_ROOT, dataRoot].some((root) => {
     return ["_state", "_refs"].some((folder) => {
       const reserved = root.toLowerCase() + "/" + folder;
       return normalized === reserved || normalized.startsWith(reserved + "/");
@@ -166,7 +169,8 @@ function studyFolder(input, dataRoot = ROOT) {
   return path;
 }
 function bookFileName(title) {
-  const name = title.replace(/[<>:"/\\|?*#[\]\x00-\x1f]/g, " ").trim().slice(0, 90).replace(/^[. ]+|[. ]+$/g, "");
+  const cleanTitle = Array.from(title, (character) => isControlCharacter(character) ? " " : character).join("");
+  const name = cleanTitle.replace(/[<>:"/\\|?*#[\]]/g, " ").trim().slice(0, 90).replace(/^[. ]+|[. ]+$/g, "");
   return !name || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(name) ? "Book " + slug(title) : name;
 }
 
@@ -1581,6 +1585,7 @@ function renderLibrarySettings(container, plugin, onSuccess) {
       const statusDetail = statusCopy?.createDiv("ol-source-status-detail");
       const setState = (state, message, detail = "", icon = "circle-alert") => {
         status.dataset.state = state;
+        actions.dataset.state = state;
         if (statusIcon && statusTitle && statusDetail) {
           (0, import_obsidian4.setIcon)(statusIcon, icon);
           statusTitle.setText(message);
@@ -1732,8 +1737,8 @@ function renderLibrarySettings(container, plugin, onSuccess) {
   const feedback = settings.createDiv({ cls: "ol-secondary", attr: { role: "status" } });
   let timer;
   const save = () => {
-    clearTimeout(timer);
-    timer = setTimeout(() => {
+    window.clearTimeout(timer);
+    timer = window.setTimeout(() => {
       void plugin.saveSettings().then(() => feedback.setText(""), (error) => feedback.setText(
         error instanceof Error ? error.message : "Could not save preferences."
       ));

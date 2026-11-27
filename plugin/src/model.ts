@@ -92,11 +92,15 @@ export function slug(title: string): string {
 		.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 72) || "book";
 }
 
+function isControlCharacter(character: string): boolean {
+	return character.charCodeAt(0) < 32;
+}
+
 export function studyFolder(input: string, dataRoot = ROOT): string {
 	const path = input.trim().replace(/\\/g, "/");
 	const normalized = path.toLowerCase();
 	if (!path || path.split("/").some(segment => !segment || segment.startsWith(".")
-		|| /[<>:"|?*#[\]\x00-\x1f]/.test(segment) || /[. ]$/.test(segment)
+		|| /[<>:"|?*#[\]]/.test(segment) || Array.from(segment).some(isControlCharacter) || /[. ]$/.test(segment)
 		|| /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(segment))
 		|| [ROOT, LEGACY_ROOT, dataRoot].some(root => {
 			return ["_state", "_refs"].some(folder => {
@@ -110,6 +114,7 @@ export function studyFolder(input: string, dataRoot = ROOT): string {
 }
 
 export function bookFileName(title: string): string {
-	const name = title.replace(/[<>:"/\\|?*#[\]\x00-\x1f]/g, " ").trim().slice(0, 90).replace(/^[. ]+|[. ]+$/g, "");
+	const cleanTitle = Array.from(title, character => isControlCharacter(character) ? " " : character).join("");
+	const name = cleanTitle.replace(/[<>:"/\\|?*#[\]]/g, " ").trim().slice(0, 90).replace(/^[. ]+|[. ]+$/g, "");
 	return !name || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(name) ? "Book " + slug(title) : name;
 }
