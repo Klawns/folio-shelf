@@ -1,5 +1,11 @@
 # Folio Shelf changelog
 
+## 0.2.34
+
+### Book records
+
+- New book records use **Book record - <book title>** as their filename, which Obsidian displays as the inline title. Existing records keep their filenames.
+
 ## 0.2.33
 
 ### Study notes
