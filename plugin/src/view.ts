@@ -361,7 +361,7 @@ export class LibraryView extends ItemView {
 		}
 		add("Copy PDF link", "link", () => this.plugin.copyLink(book));
 		options.addSeparator();
-		add("Open study note", "notebook-pen", () => this.plugin.openNote(book));
+		add("Open book record", "notebook-pen", () => this.plugin.openNote(book));
 		add("Create note", "file-plus", () => this.studyNoteDialog(book));
 		add("Link folder...", "folder", () => this.folderDialog(book));
 		options.addSeparator();
@@ -567,15 +567,29 @@ export class LibraryView extends ItemView {
 		modal.setTitle("New note");
 		let name = "";
 		const canSplit = !Platform.isMobile && book.availability === "available";
+		const actionLabel = canSplit ? "Create and study" : "Create note";
+		const waitingLabel = canSplit ? "Creating and opening…" : "Creating note…";
 		let field!: HTMLInputElement;
+		let submit!: HTMLButtonElement;
 		const create = async () => {
 			if (field.disabled) return;
 			field.disabled = true;
-			await this.plugin.run(async () => {
-				await this.plugin.createStudyNote(book, name, this.current(book)?.page);
-				modal.close();
-			});
-			field.disabled = false;
+			submit.disabled = true;
+			submit.empty();
+			setIcon(submit.createSpan({ cls: "ol-study-note-spinner", attr: { "aria-hidden": "true" } }), "loader-circle");
+			submit.createSpan({ text: waitingLabel });
+			status.setText(waitingLabel);
+			try {
+				await this.plugin.run(async () => {
+					await this.plugin.createStudyNote(book, name, this.current(book)?.page);
+					modal.close();
+				});
+			} finally {
+				field.disabled = false;
+				submit.disabled = false;
+				submit.setText(actionLabel);
+				status.setText("");
+			}
 		};
 		new Setting(modal.contentEl).setName("Filename").addText(text => {
 			field = text.inputEl;
@@ -586,8 +600,11 @@ export class LibraryView extends ItemView {
 				void create();
 			});
 		});
-		new Setting(modal.contentEl).addButton(button => button.setButtonText(canSplit ? "Create and study" : "Create note")
-			.setCta().onClick(create));
+		new Setting(modal.contentEl).addButton(button => {
+			submit = button.buttonEl;
+			button.setButtonText(actionLabel).setCta().onClick(create);
+		});
+		const status = modal.contentEl.createDiv({ cls: "ol-study-note-status", attr: { role: "status" } });
 		modal.open();
 		field.focus();
 	}

@@ -1041,7 +1041,7 @@ var LibraryView = class extends import_obsidian4.ItemView {
     }
     add("Copy PDF link", "link", () => this.plugin.copyLink(book));
     options.addSeparator();
-    add("Open study note", "notebook-pen", () => this.plugin.openNote(book));
+    add("Open book record", "notebook-pen", () => this.plugin.openNote(book));
     add("Create note", "file-plus", () => this.studyNoteDialog(book));
     add("Link folder...", "folder", () => this.folderDialog(book));
     options.addSeparator();
@@ -1238,15 +1238,29 @@ var LibraryView = class extends import_obsidian4.ItemView {
     modal.setTitle("New note");
     let name = "";
     const canSplit = !import_obsidian4.Platform.isMobile && book.availability === "available";
+    const actionLabel = canSplit ? "Create and study" : "Create note";
+    const waitingLabel = canSplit ? "Creating and opening\u2026" : "Creating note\u2026";
     let field;
+    let submit;
     const create = async () => {
       if (field.disabled) return;
       field.disabled = true;
-      await this.plugin.run(async () => {
-        await this.plugin.createStudyNote(book, name, this.current(book)?.page);
-        modal.close();
-      });
-      field.disabled = false;
+      submit.disabled = true;
+      submit.empty();
+      (0, import_obsidian4.setIcon)(submit.createSpan({ cls: "ol-study-note-spinner", attr: { "aria-hidden": "true" } }), "loader-circle");
+      submit.createSpan({ text: waitingLabel });
+      status.setText(waitingLabel);
+      try {
+        await this.plugin.run(async () => {
+          await this.plugin.createStudyNote(book, name, this.current(book)?.page);
+          modal.close();
+        });
+      } finally {
+        field.disabled = false;
+        submit.disabled = false;
+        submit.setText(actionLabel);
+        status.setText("");
+      }
     };
     new import_obsidian4.Setting(modal.contentEl).setName("Filename").addText((text) => {
       field = text.inputEl;
@@ -1259,7 +1273,11 @@ var LibraryView = class extends import_obsidian4.ItemView {
         void create();
       });
     });
-    new import_obsidian4.Setting(modal.contentEl).addButton((button) => button.setButtonText(canSplit ? "Create and study" : "Create note").setCta().onClick(create));
+    new import_obsidian4.Setting(modal.contentEl).addButton((button) => {
+      submit = button.buttonEl;
+      button.setButtonText(actionLabel).setCta().onClick(create);
+    });
+    const status = modal.contentEl.createDiv({ cls: "ol-study-note-status", attr: { role: "status" } });
     modal.open();
     field.focus();
   }

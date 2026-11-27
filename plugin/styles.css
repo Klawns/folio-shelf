@@ -757,6 +757,31 @@
 	to { transform: rotate(1turn); }
 }
 
+.ol-study-note-spinner {
+	display: inline-flex;
+	margin-inline-end: 6px;
+}
+
+.ol-study-note-spinner .svg-icon {
+	width: 14px;
+	height: 14px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+	.ol-study-note-spinner .svg-icon {
+		animation: ol-settings-spin 800ms linear infinite;
+	}
+}
+
+.ol-study-note-status {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
+}
+
 .ol-server-guide {
 	padding-bottom: var(--size-4-2);
 	font-size: 13px;
