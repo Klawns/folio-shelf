@@ -1,9 +1,9 @@
 {
   "id": "folio-shelf",
   "name": "Folio Shelf",
-  "version": "0.2.30",
+  "version": "0.2.31",
   "minAppVersion": "1.8.0",
-  "description": "Remote PDF library with notes and reading progress in Obsidian.",
+  "description": "Browse local or remote PDF libraries, track reading progress, and link study notes.",
   "author": "Fabricio",
   "isDesktopOnly": false
 }
