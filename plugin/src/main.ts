@@ -1,5 +1,5 @@
 import { Notice, Platform, Plugin, PluginSettingTab, WorkspaceLeaf } from "obsidian";
-import { DataMigration, moveLibraryData, pendingMigration, planMigration, saveMigration } from "./migration";
+import { DataMigration, UseExistingLibrary, moveLibraryData, pendingMigration, planMigration, saveMigration } from "./migration";
 import { Book, Progress, endpoint, hasConflict, idPattern, progressHeads, studyFolder } from "./model";
 import { RemoteLibraryProvider } from "./remote";
 import { LibraryStorage, Personal } from "./storage";
@@ -520,7 +520,10 @@ export default class LibraryPlugin extends Plugin {
 		await noteLeaf.openFile(note, { active: true });
 	}
 
-	async changeDataFolder(input: string, confirm: (from: string, to: string) => Promise<boolean>): Promise<boolean> {
+	async changeDataFolder(
+		input: string,
+		confirm: (from: string, to: string, existing?: UseExistingLibrary) => Promise<boolean>,
+	): Promise<boolean> {
 		if (this.migrating || this.changingSource) throw new Error("Finish the current library change first.");
 		this.migrating = true;
 		let committed = false;
@@ -530,6 +533,25 @@ export default class LibraryPlugin extends Plugin {
 				await this.refreshTask;
 				const migration = await planMigration(this.storage, this.app, input);
 				if (!migration) return true;
+				if ("storage" in migration) {
+					const { root: to, legacy } = migration.storage;
+					const from = this.storage.root;
+					if (!await confirm(from, to, { sourceHasData: migration.sourceHasData })) return false;
+					const latest = await planMigration(this.storage, this.app, to);
+					if (!latest || !("storage" in latest) || latest.storage.legacy !== legacy
+						|| latest.sourceHasData !== migration.sourceHasData) {
+						throw new Error("Library data changed while the confirmation was open. Try again.");
+					}
+					await this.persistSettings(undefined, latest.storage);
+					this.storage = latest.storage;
+					if (!this.localFolder) {
+						this.books = [];
+						this.catalogIdentity = undefined;
+						this.snapshotSaved = false;
+					}
+					committed = true;
+					return true;
+				}
 				if (Object.values(migration.moves).some(move => move.phase !== "absent")
 					&& !await confirm(migration.from, migration.to)) return false;
 				saveMigration(this.app, migration);

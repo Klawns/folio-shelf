@@ -1,5 +1,6 @@
 import { ItemView, Menu, Modal, Platform, Setting, SuggestModal, WorkspaceLeaf, setIcon, setTooltip } from "obsidian";
 import type LibraryPlugin from "./main";
+import type { UseExistingLibrary } from "./migration";
 import { Book, Progress, endpoint, hasConflict, progressHeads, studyFolder } from "./model";
 import { CatalogPendingError } from "./remote";
 import type { Personal } from "./storage";
@@ -774,16 +775,20 @@ function chooseVaultPath(plugin: LibraryPlugin, folders: boolean, onSelect: (pat
 	picker.open();
 }
 
-function confirmDataMove(plugin: LibraryPlugin, from: string, to: string): Promise<boolean> {
+function confirmDataMove(plugin: LibraryPlugin, from: string, to: string, existing?: UseExistingLibrary): Promise<boolean> {
 	return new Promise(resolve => {
 		const modal = new Modal(plugin.app);
-		modal.setTitle("Move library data?");
-		modal.contentEl.createEl("p", { text: "From " + from + "/" });
-		modal.contentEl.createEl("p", { text: "To " + to + "/" });
-		modal.contentEl.createEl("p", { text: "Pause Fast Note Sync on all devices before moving the data." });
+		modal.setTitle(existing ? "Use existing library?" : "Move library data?");
+		modal.contentEl.createEl("p", { text: "Current folder: " + from + "/" });
+		modal.contentEl.createEl("p", { text: "Selected folder: " + to + "/" });
+		const description = existing
+			? "Load the library in the selected folder." + (existing.sourceHasData
+				? " Both folders contain library data. Files in the current folder will stay there." : "")
+			: "Pause Fast Note Sync on all devices before moving the data.";
+		modal.contentEl.createEl("p", { text: description });
 		new Setting(modal.contentEl)
 			.addButton(button => button.setButtonText("Cancel").onClick(() => modal.close()))
-			.addButton(button => button.setButtonText("Move data").setCta().onClick(() => {
+			.addButton(button => button.setButtonText(existing ? "Use existing library" : "Move data").setCta().onClick(() => {
 				resolve(true);
 				modal.close();
 			}));
@@ -817,7 +822,7 @@ function renderDataStorage(settings: HTMLElement, plugin: LibraryPlugin): void {
 		field.removeAttribute("aria-invalid");
 		update();
 		try {
-			await plugin.changeDataFolder(path, (from, to) => confirmDataMove(plugin, from, to));
+			await plugin.changeDataFolder(path, (from, to, existing) => confirmDataMove(plugin, from, to, existing));
 			field.value = lastSubmitted = plugin.storage.root;
 		} catch (error) {
 			field.setAttribute("aria-invalid", "true");

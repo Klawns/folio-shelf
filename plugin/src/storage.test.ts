@@ -43,9 +43,9 @@ function testVault() {
 	};
 	const local = new Map<string, unknown>();
 	const addFolder = (path: string) => {
-		const folder = Object.assign(new TFolder(), {
-			path,
-			get children() { return [...files.values()].filter(child => child.path?.slice(0, child.path.lastIndexOf("/")) === this.path); },
+		const folder = Object.assign(new TFolder(), { path });
+		Object.defineProperty(folder, "children", {
+			get: () => [...files.values()].filter(child => child.path?.slice(0, child.path.lastIndexOf("/")) === folder.path),
 		});
 		files.set(path, folder);
 		return folder;
@@ -192,6 +192,47 @@ it("applies and reloads a custom data folder in a fresh vault", async () => {
 	expect(files.has("04 Diversos/Biblioteca/_state/deleted/" + id + ".md")).toBe(true);
 	expect(files.has(referencePath(id, "04 Diversos/Biblioteca"))).toBe(true);
 	expect(files.has("Library/_state")).toBe(false);
+});
+
+it.each([false, true])("adopts a synced library with source data present: %s", async sourceHasData => {
+	const { app, files } = testVault();
+	const start = pluginFor(app);
+	const plugin = await start();
+	const root = "04 Diversos/Library";
+	const synced = new LibraryStorage(app, root, true);
+	const snapshot = { schema: 1 as const, origin: "https://books.example.test", version: "1", books: [book] };
+	await synced.saveSnapshot(snapshot);
+	if (sourceHasData) await plugin.storage.saveSnapshot({ ...snapshot, version: "2" });
+	const sourcePath = plugin.storage.snapshotPath;
+	const before = [...files];
+	const rename = vi.spyOn(app.fileManager, "renameFile");
+
+	const confirm = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+	expect(await plugin.changeDataFolder(root, confirm)).toBe(false);
+	expect(plugin.storage.root).toBe("Library");
+	expect(await plugin.changeDataFolder(root, confirm)).toBe(true);
+	expect(confirm).toHaveBeenLastCalledWith("Library", root, { sourceHasData });
+	expect(pendingMigration(app)).toBeUndefined();
+	expect(rename).not.toHaveBeenCalled();
+	expect([...files]).toEqual(before);
+	expect(files.has(sourcePath)).toBe(sourceHasData);
+
+	const reloaded = await start();
+	expect(reloaded.storage.root).toBe(root);
+	expect(reloaded.storage.legacy).toBe(true);
+	expect(await reloaded.storage.snapshot()).toEqual(snapshot);
+});
+
+it("waits for recognizable library data before offering to use a synced folder", async () => {
+	const { app, addFolder, create } = testVault();
+	const plugin = await pluginFor(app)();
+	addFolder("Synced/_state");
+	create("Synced/_state/catalog.md", "Incomplete download");
+	const confirm = vi.fn();
+
+	await expect(plugin.changeDataFolder("Synced", confirm)).rejects.toThrow("Synced/_state");
+	expect(confirm).not.toHaveBeenCalled();
+	expect(plugin.storage.root).toBe("Library");
 });
 
 it("migrates legacy data and resumes when Obsidian closes during a rename", async () => {
