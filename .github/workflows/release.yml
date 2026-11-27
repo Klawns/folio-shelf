@@ -16,6 +16,8 @@ jobs:
     runs-on: windows-latest
     permissions:
       contents: write
+      attestations: write
+      id-token: write
     steps:
       - uses: actions/checkout@v5
         with:
@@ -78,6 +80,15 @@ jobs:
         if: steps.prepare.outputs.publish == 'true'
         working-directory: plugin
         run: Compress-Archive -LiteralPath manifest.json,main.js,styles.css,../LICENSE -DestinationPath folio-shelf.zip
+      - name: Attest release assets
+        if: steps.prepare.outputs.publish == 'true'
+        uses: actions/attest@v4
+        with:
+          subject-path: |
+            plugin/main.js
+            plugin/manifest.json
+            plugin/styles.css
+            plugin/folio-shelf.zip
       - name: Publish GitHub release
         if: steps.prepare.outputs.publish == 'true'
         shell: bash
