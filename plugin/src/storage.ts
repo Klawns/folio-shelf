@@ -313,8 +313,9 @@ export class LibraryStorage {
 		const files = folder + "/Files";
 		const notes = folder + "/Notes";
 		const existing = this.findNote(book)
-			?? await this.noteAt(notes + "/" + fileName + ".md", book)
-			?? (values?.folder ? await this.noteAt(values.folder + "/" + fileName + ".md", book) : undefined);
+			?? await this.recordInFolder(book, notes, fileName)
+			?? (values?.organized ? await this.recordInFolder(book, values.folder + "/Notes", fileName) : undefined)
+			?? (values?.folder ? await this.recordInFolder(book, values.folder, fileName) : undefined);
 		await this.ensureFolder(folder);
 		const occupied = this.app.vault.getAbstractFileByPath(files + "/" + fileName + ".pdf");
 		const alreadyLinked = occupied instanceof TFile && occupied.stat.size <= 300
@@ -326,7 +327,9 @@ export class LibraryStorage {
 		await this.ensureFolder(notes);
 		if (existing && existing.path !== notes + "/" + existing.name) {
 			let target = notes + "/" + existing.name;
-			if (this.app.vault.getAbstractFileByPath(target)) target = notes + "/" + fileName + " - Book record.md";
+			if (this.app.vault.getAbstractFileByPath(target)) {
+				target = notes + "/Book record - " + fileName + " (" + book.id.slice(0, 8) + ").md";
+			}
 			if (this.app.vault.getAbstractFileByPath(target)) throw new Error("A note with that name already exists in the folder.");
 			await this.app.fileManager.renameFile(existing, target);
 		}
@@ -348,6 +351,15 @@ export class LibraryStorage {
 		if (file instanceof TFile && this.isBookRecord(await this.metadata(path), book, path)) return file;
 	}
 
+	private async recordInFolder(book: Book, folder: string, fileName: string): Promise<TFile | undefined> {
+		const prefix = folder + "/Book record - " + fileName;
+		const suffix = " (" + book.id.slice(0, 8) + ").md";
+		return await this.noteAt(prefix + ".md", book)
+			?? await this.noteAt(prefix + suffix, book)
+			?? await this.noteAt(folder + "/" + fileName + ".md", book)
+			?? await this.noteAt(folder + "/" + fileName + " - Book record" + suffix, book);
+	}
+
 	private async findOrCreateNote(book: Book, root: string): Promise<TFile> {
 		await this.ensureReferenceInternal(book);
 		const existing = this.findNote(book);
@@ -363,12 +375,13 @@ export class LibraryStorage {
 
 	private async createNote(book: Book, folder: string, fileName: string): Promise<TFile> {
 		await this.ensureFolder(folder);
-		let path = folder + "/" + fileName + ".md";
+		const existing = await this.recordInFolder(book, folder, fileName);
+		if (existing) return existing;
+		const basePath = folder + "/Book record - " + fileName;
+		let path = basePath + ".md";
 		const link = this.pdfLink(book);
 		if (this.app.vault.getAbstractFileByPath(path)) {
-			const current = await this.noteAt(path, book);
-			if (current) return current;
-			path = folder + "/" + fileName + " - Book record (" + book.id.slice(0, 8) + ").md";
+			path = basePath + " (" + book.id.slice(0, 8) + ").md";
 		}
 		const fields = { Title: book.title, Author: book.author ?? null, Category: book.category, Status: "Not started", PDF: link };
 		const header = Object.entries(fields).map(([key, value]) => key + ": " + JSON.stringify(value)).join("\n");
