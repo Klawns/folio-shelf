@@ -4,7 +4,7 @@
 
 ### Book records
 
-- New book records use **Book record - <book title>** as their filename, which Obsidian displays as the inline title. Existing records keep their filenames.
+- New book records show their purpose in Obsidian's inline title, for example **Book record - Designing Data-Intensive Applications**. Existing records keep their filenames.
 
 ## 0.2.33
 
