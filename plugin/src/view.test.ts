@@ -3,7 +3,9 @@ import { Platform } from "obsidian";
 import type LibraryPlugin from "./main";
 import { LibraryView, renderLibrarySettings } from "./view";
 
-const { menuItems, showMenu, picker } = vi.hoisted(() => ({
+const { menuItems, showMenu, picker, showModal, closeModal } = vi.hoisted(() => ({
+	showModal: vi.fn(),
+	closeModal: vi.fn(),
 	menuItems: new Map<string, { checked: boolean; select: () => void }>(),
 	showMenu: vi.fn(),
 	picker: { choose: (_path: string) => {} },
@@ -50,11 +52,18 @@ vi.mock("obsidian", () => {
 		setAttribute(name: string, value: string): void { this.attrs.set(name, value); }
 		getAttribute(name: string): string | undefined { return this.attrs.get(name); }
 		removeAttribute(name: string): void { this.attrs.delete(name); }
-		empty(): void { this.children = []; }
-		setText(text: string): void { this.text = text; }
+		empty(): void { this.children = []; this.text = ""; }
+		setText(text: string): void { this.empty(); this.text = text; }
+		focus(): void {}
 	}
 
 	return {
+		Modal: class {
+			contentEl = new Element();
+			setTitle(): void {}
+			open(): void { showModal(this.contentEl); }
+			close(): void { closeModal(); }
+		},
 		ItemView: class {
 			contentEl = new Element();
 			open(): Promise<void> { return this.onOpen(); }
@@ -121,11 +130,13 @@ vi.mock("obsidian", () => {
 			}
 			addButton(callback: (control: object) => void): this {
 				const buttonEl = this.settingEl.createEl("button");
-				callback({
+				const control = {
 					buttonEl,
-					setButtonText: (text: string) => buttonEl.setText(text),
+					setButtonText: (text: string) => { buttonEl.setText(text); return control; },
+					setCta: () => control,
 					onClick: (click: () => void) => buttonEl.addEventListener("click", click),
-				});
+				};
+				callback(control);
 				return this;
 			}
 			addSlider(): this { return this; }
@@ -178,6 +189,55 @@ it("renders the library when Obsidian opens the workspace view", async () => {
 	expect(JSON.stringify(content)).not.toContain("Test book 12");
 	content.find("Previous")!.listeners.get("click")!();
 	expect(JSON.stringify(content)).toContain("Page 1 of 2");
+});
+
+it("keeps new note creation pending and lets the user retry after failure", async () => {
+	let rejectFirstAttempt!: (error: Error) => void;
+	let resolveRetry!: () => void;
+	const firstAttempt = new Promise<void>((_, reject) => { rejectFirstAttempt = reject; });
+	const retry = new Promise<void>(resolve => { resolveRetry = resolve; });
+	const createStudyNote = vi.fn().mockReturnValueOnce(firstAttempt).mockReturnValueOnce(retry);
+	const plugin = {
+		createStudyNote,
+		run: async (action: () => Promise<void>) => { await action().catch(() => {}); },
+	} as unknown as LibraryPlugin;
+	const view = new LibraryView({} as ConstructorParameters<typeof LibraryView>[0], plugin);
+	const book = { id: "book", availability: "available" };
+	closeModal.mockClear();
+	(view as unknown as { studyNoteDialog(book: object): void }).studyNoteDialog(book);
+	const modal = showModal.mock.lastCall![0];
+	const field = modal.find("Filename").children[0];
+	const button = modal.find("Create and study");
+	const click = button.listeners.get("click");
+	const enter = () => field.listeners.get("keydown")({ key: "Enter", preventDefault() {} });
+	field.value = "Chapter 2";
+	field.listeners.get("input")();
+
+	const pending = click();
+	expect(button.find("Creating and opening…")).toBeDefined();
+	expect(button.children.some((child: { cls: string }) => child.cls === "ol-study-note-spinner")).toBe(true);
+	expect(field.disabled).toBe(true);
+	expect(button.disabled).toBe(true);
+	await click();
+	enter();
+	expect(createStudyNote).toHaveBeenCalledTimes(1);
+	expect(closeModal).not.toHaveBeenCalled();
+
+	rejectFirstAttempt(new Error("Could not create note"));
+	await pending;
+	expect(closeModal).not.toHaveBeenCalled();
+	expect(button.text).toBe("Create and study");
+	expect(button.children).toHaveLength(0);
+	expect(field.disabled).toBe(false);
+	expect(button.disabled).toBe(false);
+	expect(field.value).toBe("Chapter 2");
+
+	enter();
+	expect(createStudyNote).toHaveBeenCalledTimes(2);
+	expect(createStudyNote).toHaveBeenLastCalledWith(book, "Chapter 2", undefined);
+	expect(closeModal).not.toHaveBeenCalled();
+	resolveRetry();
+	await vi.waitFor(() => expect(closeModal).toHaveBeenCalledTimes(1));
 });
 
 it.each(["modal", "settings"] as const)("loads a desktop folder from the %s source menu", async surface => {
