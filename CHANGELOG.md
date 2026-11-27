@@ -1,6 +1,6 @@
 # Folio Shelf changelog
 
-## Unreleased
+## 0.2.33
 
 ### Study notes
 
