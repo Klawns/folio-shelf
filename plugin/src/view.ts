@@ -918,6 +918,7 @@ export function renderLibrarySettings(container: HTMLElement, plugin: LibraryPlu
 			const statusDetail = statusCopy?.createDiv("ol-source-status-detail");
 			const setState = (state: string, message: string, detail = "", icon = "circle-alert") => {
 				status.dataset.state = state;
+				actions.dataset.state = state;
 				if (statusIcon && statusTitle && statusDetail) {
 					setIcon(statusIcon, icon);
 					statusTitle.setText(message);
@@ -1068,10 +1069,10 @@ export function renderLibrarySettings(container: HTMLElement, plugin: LibraryPlu
 	const notes = settingsGroup(settings, "Study notes", "notebook-pen");
 	const appearance = settingsGroup(settings, "Appearance", "palette");
 	const feedback = settings.createDiv({ cls: "ol-secondary", attr: { role: "status" } });
-	let timer: ReturnType<typeof setTimeout> | undefined;
+	let timer: number | undefined;
 	const save = () => {
-		clearTimeout(timer);
-		timer = setTimeout(() => {
+		window.clearTimeout(timer);
+		timer = window.setTimeout(() => {
 			void plugin.saveSettings().then(() => feedback.setText(""), error => feedback.setText(
 				error instanceof Error ? error.message : "Could not save preferences."));
 		}, 300);

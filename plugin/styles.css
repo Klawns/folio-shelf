@@ -931,9 +931,12 @@
 	padding: 16px;
 	border: 1px solid var(--ol-source-border);
 	border-radius: 14px;
-	background: var(--background-secondary);
-	background: color-mix(in srgb, var(--background-secondary) 96%, white);
+	background: var(--ol-source-panel-background, var(--background-secondary));
 	box-shadow: none;
+}
+
+@supports (background: color-mix(in srgb, black, white)) {
+	.ol-source-modal { --ol-source-panel-background: color-mix(in srgb, var(--background-secondary) 96%, white); }
 }
 
 .ol-source-modal :is(.modal-close-button, .modal-header-button) { display: none; }
@@ -1132,7 +1135,7 @@
 }
 
 @media (prefers-reduced-motion: no-preference) {
-	.ol-source-modal .ol-settings-actions:has([data-state="busy"]) .ol-source-action-icon {
+	.ol-source-modal .ol-settings-actions[data-state="busy"] .ol-source-action-icon {
 		animation: ol-settings-spin 800ms linear infinite;
 	}
 }

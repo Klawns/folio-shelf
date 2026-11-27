@@ -30,6 +30,7 @@ declare function require(name: "node:url"): {
 };
 
 async function scanLocalFolder(input: string, deviceId: string): Promise<{ folder: string; books: Book[] }> {
+	if (!Platform.isDesktopApp) throw new Error("Local folders are available on desktop.");
 	const fs = require("node:fs/promises");
 	const path = require("node:path");
 	const { pathToFileURL } = require("node:url");
@@ -74,6 +75,7 @@ async function scanLocalFolder(input: string, deviceId: string): Promise<{ folde
 }
 
 async function checkLocalPDF(url: string): Promise<void> {
+	if (!Platform.isDesktopApp) throw new Error("Local folders are available on desktop.");
 	const { fileURLToPath } = require("node:url");
 	const { stat } = require("node:fs/promises");
 	try {
@@ -89,12 +91,10 @@ export class LocalLibraryProvider implements LibraryProvider<{ folder: string; b
 	constructor(private folder: string, private deviceId: string) {}
 
 	async readCatalog() {
-		if (!Platform.isDesktopApp) throw new Error("Local folders are available on desktop.");
 		return scanLocalFolder(this.folder, this.deviceId);
 	}
 
 	async checkPDF(url: string): Promise<void> {
-		if (!Platform.isDesktopApp) throw new Error("Local folders are available on desktop.");
 		await checkLocalPDF(url);
 	}
 }
