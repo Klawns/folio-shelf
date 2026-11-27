@@ -12,6 +12,15 @@ export interface DataMigration {
 	moves: Record<typeof folders[number], Move>;
 }
 
+interface ExistingLibrary {
+	storage: LibraryStorage;
+	sourceHasData: boolean;
+}
+
+export interface UseExistingLibrary {
+	sourceHasData: boolean;
+}
+
 export function pendingMigration(app: App): DataMigration | undefined {
 	return app.loadLocalStorage(migrationKey) ?? undefined;
 }
@@ -27,14 +36,18 @@ function entries(folder: TFolder, root = folder.path): string[] {
 	]).sort();
 }
 
-export async function planMigration(storage: LibraryStorage, app: App, input: string): Promise<DataMigration | undefined> {
+export async function planMigration(storage: LibraryStorage, app: App, input: string): Promise<DataMigration | ExistingLibrary | undefined> {
 	const to = studyFolder(input, storage.root);
 	if (to === storage.root) return;
 	if (to.toLowerCase() === storage.root.toLowerCase()) throw conflict(to);
 	const moves = {} as DataMigration["moves"];
+	let occupied: string | undefined;
 	for (const name of folders) {
 		const destination = to + "/" + name;
-		if (await app.vault.adapter.exists(destination, false)) throw conflict(destination);
+		if (await app.vault.adapter.exists(destination, false)) {
+			if (!(app.vault.getAbstractFileByPath(destination) instanceof TFolder)) throw conflict(destination);
+			occupied ??= destination;
+		}
 		const source = storage.root + "/" + name;
 		const file = app.vault.getAbstractFileByPath(source);
 		if (!(file instanceof TFolder) && (file || await app.vault.adapter.exists(source, false))) throw conflict(source);
@@ -46,6 +59,17 @@ export async function planMigration(storage: LibraryStorage, app: App, input: st
 		if (!(app.vault.getAbstractFileByPath(path) instanceof TFolder) && await app.vault.adapter.exists(path, false)) {
 			throw conflict(path);
 		}
+	}
+	if (occupied) {
+		const current = new LibraryStorage(app, to, false);
+		const legacy = new LibraryStorage(app, to, true);
+		const currentData = await current.hasRecognizedState();
+		const legacyData = await legacy.hasRecognizedState();
+		if (currentData === legacyData) throw conflict(occupied);
+		return {
+			storage: currentData ? current : legacy,
+			sourceHasData: Object.values(moves).some(move => move.entries.some(entry => !entry.endsWith("/"))),
+		};
 	}
 	return { from: storage.root, to, legacy: storage.legacy, moves };
 }

@@ -21,7 +21,7 @@ var __copyProps = (to, from, except, desc) => {
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
 
-// local-typescript:C:\Users\Fabricio\Documents\PluginLivrosObsidian\plugin\src\local.ts
+// local-typescript:E:\Projetos\FolioShelf\plugin\src\local.ts
 var local_exports = {};
 __export(local_exports, {
   LocalLibraryProvider: () => LocalLibraryProvider
@@ -87,7 +87,7 @@ async function checkLocalPDF(url) {
 }
 var import_obsidian5, LocalLibraryProvider;
 var init_local = __esm({
-  "local-typescript:C:\\Users\\Fabricio\\Documents\\PluginLivrosObsidian\\plugin\\src\\local.ts"() {
+  "local-typescript:E:\\Projetos\\FolioShelf\\plugin\\src\\local.ts"() {
     import_obsidian5 = require("obsidian");
     LocalLibraryProvider = class {
       constructor(folder, deviceId) {
@@ -104,7 +104,7 @@ var init_local = __esm({
   }
 });
 
-// local-typescript:C:\Users\Fabricio\Documents\PluginLivrosObsidian\plugin\src\main.ts
+// local-typescript:E:\Projetos\FolioShelf\plugin\src\main.ts
 var main_exports = {};
 __export(main_exports, {
   default: () => LibraryPlugin
@@ -112,10 +112,10 @@ __export(main_exports, {
 module.exports = __toCommonJS(main_exports);
 var import_obsidian6 = require("obsidian");
 
-// local-typescript:C:\Users\Fabricio\Documents\PluginLivrosObsidian\plugin\src\migration.ts
-var import_obsidian = require("obsidian");
+// local-typescript:E:\Projetos\FolioShelf\plugin\src\migration.ts
+var import_obsidian2 = require("obsidian");
 
-// local-typescript:C:\Users\Fabricio\Documents\PluginLivrosObsidian\plugin\src\model.ts
+// local-typescript:E:\Projetos\FolioShelf\plugin\src\model.ts
 var ROOT = "Library";
 var LEGACY_ROOT = "Biblioteca";
 var idPattern = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/;
@@ -174,177 +174,8 @@ function bookFileName(title) {
   return !name || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(name) ? "Book " + slug(title) : name;
 }
 
-// local-typescript:C:\Users\Fabricio\Documents\PluginLivrosObsidian\plugin\src\migration.ts
-var migrationKey = "obsidian-library-data-migration";
-var folders = ["_state", "_refs"];
-function pendingMigration(app) {
-  return app.loadLocalStorage(migrationKey) ?? void 0;
-}
-function conflict(path) {
-  return new Error("Resolve the library data conflict at " + path + " and try again.");
-}
-function entries(folder, root = folder.path) {
-  return folder.children.flatMap((child) => [
-    child.path.slice(root.length + 1) + (child instanceof import_obsidian.TFolder ? "/" : ""),
-    ...child instanceof import_obsidian.TFolder ? entries(child, root) : []
-  ]).sort();
-}
-async function planMigration(storage, app, input) {
-  const to = studyFolder(input, storage.root);
-  if (to === storage.root) return;
-  if (to.toLowerCase() === storage.root.toLowerCase()) throw conflict(to);
-  const moves = {};
-  for (const name of folders) {
-    const destination = to + "/" + name;
-    if (await app.vault.adapter.exists(destination, false)) throw conflict(destination);
-    const source = storage.root + "/" + name;
-    const file = app.vault.getAbstractFileByPath(source);
-    if (!(file instanceof import_obsidian.TFolder) && (file || await app.vault.adapter.exists(source, false))) throw conflict(source);
-    moves[name] = file instanceof import_obsidian.TFolder ? { phase: "pending", entries: entries(file) } : { phase: "absent", entries: [] };
-  }
-  for (let path = to; path; path = path.slice(0, Math.max(0, path.lastIndexOf("/")))) {
-    if (!(app.vault.getAbstractFileByPath(path) instanceof import_obsidian.TFolder) && await app.vault.adapter.exists(path, false)) {
-      throw conflict(path);
-    }
-  }
-  return { from: storage.root, to, legacy: storage.legacy, moves };
-}
-function saveMigration(app, move) {
-  app.saveLocalStorage(migrationKey, move);
-}
-async function moveLibraryData(app, storage, migration) {
-  const { from, to, moves } = migration;
-  for (const name of folders) {
-    const source = from + "/" + name;
-    const destination = to + "/" + name;
-    const step = moves[name];
-    const old = app.vault.getAbstractFileByPath(source);
-    const targetExists = await app.vault.adapter.exists(destination, false);
-    if (step.phase === "absent") {
-      if (old || await app.vault.adapter.exists(source, false)) throw conflict(source);
-      if (targetExists) throw conflict(destination);
-      continue;
-    }
-    if (step.phase !== "done" && old instanceof import_obsidian.TFolder) {
-      if (targetExists) throw conflict(destination);
-      if (step.phase === "pending") step.entries = entries(old);
-      step.phase = "moving";
-      saveMigration(app, migration);
-      try {
-        await storage.ensureFolder(to);
-        if (await app.vault.adapter.exists(destination, false)) throw conflict(destination);
-        await app.fileManager.renameFile(old, destination);
-      } catch (error) {
-        throw new Error("Could not move " + source + " to " + destination + ". " + (error instanceof Error ? error.message : ""));
-      }
-    } else if (old || await app.vault.adapter.exists(source, false) || step.phase === "pending") {
-      throw conflict(source);
-    }
-    const target = app.vault.getAbstractFileByPath(destination);
-    if (!(target instanceof import_obsidian.TFolder) || JSON.stringify(entries(target)) !== JSON.stringify(step.entries)) {
-      throw conflict(destination);
-    }
-    step.phase = "done";
-    saveMigration(app, migration);
-  }
-  await updateReferences(app, from, to);
-}
-async function updateReferences(app, from, to) {
-  const prefix = from + "/_refs/";
-  const newPrefix = to + "/_refs/";
-  for (const file of app.vault.getMarkdownFiles()) {
-    if (file.path.startsWith(to + "/_state/")) continue;
-    const original = await app.vault.read(file);
-    if (!original.includes(prefix)) continue;
-    const rewrite = (content) => content.replace(
-      /\[\[([^\]\n#|]+\.pdf)(?=[#|\]])/g,
-      (link, path) => path.startsWith(prefix) && idPattern.test(path.slice(prefix.length, -4)) ? "[[" + newPrefix + path.slice(prefix.length) : link
-    );
-    const header = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(original);
-    if (header?.[1].includes(prefix) && /^refPath\s*:/m.test(header[1])) {
-      const ref = (0, import_obsidian.parseYaml)(header[1])?.refPath;
-      if (typeof ref === "string" && ref.startsWith(prefix) && ref.endsWith(".pdf") && idPattern.test(ref.slice(prefix.length, -4))) {
-        await app.fileManager.processFrontMatter(file, (data) => {
-          if (data.refPath === ref) data.refPath = newPrefix + ref.slice(prefix.length);
-        });
-      }
-    }
-    if (rewrite(original) !== original) await app.vault.process(file, rewrite);
-  }
-}
-
-// local-typescript:C:\Users\Fabricio\Documents\PluginLivrosObsidian\plugin\src\remote.ts
-var import_obsidian2 = require("obsidian");
-var CatalogPendingError = class extends Error {
-};
-async function requestServer(origin, path) {
-  try {
-    return await (0, import_obsidian2.requestUrl)({ url: origin + path, throw: false });
-  } catch {
-    throw new Error(`Could not reach the library server. Open ${origin}/health on this device and check access to the private network and whether the device trusts the HTTPS certificate.`);
-  }
-}
-async function checkServer(origin) {
-  const response = await requestServer(origin, "/health");
-  if (response.status !== 200 || typeof response.json?.version !== "string") {
-    throw new Error("Unexpected server response (HTTP " + response.status + ").");
-  }
-  if (response.json.catalogReady !== true) {
-    throw new CatalogPendingError("The server is reachable. The library is indexing or the disk is unavailable. Try again after indexing finishes.");
-  }
-  const catalogVersion = response.json.catalogVersion;
-  return typeof catalogVersion === "string" && catalogVersion ? catalogVersion : void 0;
-}
-async function fetchCatalog(origin) {
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const books = [];
-    const cursors = /* @__PURE__ */ new Set();
-    let version;
-    let cursor = "";
-    do {
-      const response = await requestServer(origin, "/api/v1/books" + (cursor ? "?cursor=" + encodeURIComponent(cursor) : ""));
-      if (response.status === 409) break;
-      if (response.status !== 200) throw new Error("Catalog request failed (HTTP " + response.status + ").");
-      const data = response.json;
-      if (!data || typeof data.version !== "string" || typeof data.nextCursor !== "string" || version !== void 0 && version !== data.version || !validBooks(data.books, origin) || cursors.has(data.nextCursor)) {
-        throw new Error("The server returned an incompatible catalog.");
-      }
-      version = data.version;
-      books.push(...data.books);
-      cursor = data.nextCursor;
-      cursors.add(cursor);
-      if (!cursor && version !== void 0 && validBooks(books, origin)) return { version, books };
-    } while (cursor);
-  }
-  throw new Error("Could not fetch a consistent catalog version.");
-}
-async function checkPDF(url) {
-  const response = await (0, import_obsidian2.requestUrl)({ url, method: "HEAD", throw: false });
-  if (response.status === 404) throw new Error("Book not found on the server.");
-  if (response.status === 415) throw new Error("The file is incompatible with the PDF reader.");
-  if (response.status === 401 || response.status === 403) throw new Error("PDF access is unavailable on this network.");
-  if (response.status !== 200) throw new Error("PDF unavailable (HTTP " + response.status + ").");
-  if (!Object.entries(response.headers).some(([name, value]) => name.toLowerCase() === "content-type" && value.toLowerCase().startsWith("application/pdf"))) {
-    throw new Error("The server did not return a compatible PDF.");
-  }
-}
-var RemoteLibraryProvider = class {
-  constructor(origin) {
-    this.origin = origin;
-  }
-  checkVersion() {
-    return checkServer(this.origin);
-  }
-  readCatalog() {
-    return fetchCatalog(this.origin);
-  }
-  checkPDF(url) {
-    return checkPDF(url);
-  }
-};
-
-// local-typescript:C:\Users\Fabricio\Documents\PluginLivrosObsidian\plugin\src\storage.ts
-var import_obsidian3 = require("obsidian");
+// local-typescript:E:\Projetos\FolioShelf\plugin\src\storage.ts
+var import_obsidian = require("obsidian");
 var LibraryStorage = class {
   constructor(app, root, legacyLayout) {
     this.app = app;
@@ -360,7 +191,7 @@ var LibraryStorage = class {
     __publicField(this, "writes", /* @__PURE__ */ new Set());
     __publicField(this, "progressPath");
     __publicField(this, "deletedPath");
-    const legacy = legacyLayout ?? (root ? root === LEGACY_ROOT : ["_state", "_refs", "Notas"].some((folder) => app.vault.getAbstractFileByPath(LEGACY_ROOT + "/" + folder) instanceof import_obsidian3.TFolder));
+    const legacy = legacyLayout ?? (root ? root === LEGACY_ROOT : ["_state", "_refs", "Notas"].some((folder) => app.vault.getAbstractFileByPath(LEGACY_ROOT + "/" + folder) instanceof import_obsidian.TFolder));
     this.legacy = legacy;
     this.root = root ?? (legacy ? LEGACY_ROOT : ROOT);
     this.statePath = this.root + "/_state";
@@ -396,28 +227,28 @@ var LibraryStorage = class {
     if (!idPattern.test(book.id)) throw new Error("Invalid book ID.");
     await this.ensureFolder(this.deletedPath.slice(0, -1));
     const path = this.deletedPath + book.id + ".md";
-    if (this.app.vault.getAbstractFileByPath(path) instanceof import_obsidian3.TFile) return;
+    if (this.app.vault.getAbstractFileByPath(path) instanceof import_obsidian.TFile) return;
     try {
       await this.app.vault.create(path, "---\nbookId: " + book.id + "\n---\n");
     } catch (error) {
-      if (!(this.app.vault.getAbstractFileByPath(path) instanceof import_obsidian3.TFile)) throw error;
+      if (!(this.app.vault.getAbstractFileByPath(path) instanceof import_obsidian.TFile)) throw error;
     }
   }
   async ensureFolder(path) {
-    if (!path || this.app.vault.getAbstractFileByPath(path) instanceof import_obsidian3.TFolder) return;
+    if (!path || this.app.vault.getAbstractFileByPath(path) instanceof import_obsidian.TFolder) return;
     await this.ensureFolder(path.slice(0, Math.max(0, path.lastIndexOf("/"))));
     try {
       await this.app.vault.createFolder(path);
     } catch (error) {
-      if (!(this.app.vault.getAbstractFileByPath(path) instanceof import_obsidian3.TFolder)) throw error;
+      if (!(this.app.vault.getAbstractFileByPath(path) instanceof import_obsidian.TFolder)) throw error;
     }
   }
   async metadata(path) {
     const file = this.app.vault.getAbstractFileByPath(path);
-    if (!(file instanceof import_obsidian3.TFile)) return;
+    if (!(file instanceof import_obsidian.TFile)) return;
     const contents = await this.app.vault.read(file);
     const match = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(contents);
-    if (match) return (0, import_obsidian3.parseYaml)(match[1]);
+    if (match) return (0, import_obsidian.parseYaml)(match[1]);
   }
   async snapshot() {
     const state = await this.metadata(this.snapshotPath);
@@ -426,6 +257,10 @@ var LibraryStorage = class {
     const books = JSON.parse(state.catalog);
     if (validBooks(books, origin)) return { schema: 1, origin, version: state.version, books };
   }
+  async hasRecognizedState() {
+    const snapshot = await this.snapshot().catch(() => void 0);
+    return !!snapshot || this.progress().size > 0 || [...this.personals().keys()].some((id) => idPattern.test(id));
+  }
   saveSnapshot(state) {
     return this.write(() => this.saveSnapshotInternal(state));
   }
@@ -433,14 +268,14 @@ var LibraryStorage = class {
     const contents = "---\nschema: 1\norigin: " + JSON.stringify(state.origin) + "\nversion: " + JSON.stringify(state.version) + "\ncatalog: " + JSON.stringify(JSON.stringify(state.books)) + "\n---\n";
     await this.ensureFolder(this.snapshotPath.slice(0, this.snapshotPath.lastIndexOf("/")));
     const existing = this.app.vault.getAbstractFileByPath(this.snapshotPath);
-    if (existing instanceof import_obsidian3.TFile) {
+    if (existing instanceof import_obsidian.TFile) {
       await this.app.vault.process(existing, (current) => current === contents ? current : contents);
     } else {
       try {
         await this.app.vault.create(this.snapshotPath, contents);
       } catch (error) {
         const synced = this.app.vault.getAbstractFileByPath(this.snapshotPath);
-        if (!(synced instanceof import_obsidian3.TFile)) throw error;
+        if (!(synced instanceof import_obsidian.TFile)) throw error;
       }
     }
   }
@@ -474,10 +309,10 @@ var LibraryStorage = class {
         file = await this.app.vault.create(path, "---\nbookId: " + book.id + "\n---\n");
       } catch (error) {
         file = this.app.vault.getAbstractFileByPath(path);
-        if (!(file instanceof import_obsidian3.TFile)) throw error;
+        if (!(file instanceof import_obsidian.TFile)) throw error;
       }
     }
-    if (!(file instanceof import_obsidian3.TFile)) throw new Error("The metadata path is occupied.");
+    if (!(file instanceof import_obsidian.TFile)) throw new Error("The metadata path is occupied.");
     await this.app.fileManager.processFrontMatter(file, (data) => {
       data.bookId = book.id;
       for (const [key, value] of Object.entries(values)) data[key] = value || null;
@@ -529,10 +364,10 @@ var LibraryStorage = class {
         return await this.app.vault.createBinary(path, contents.buffer);
       } catch (error) {
         file = this.app.vault.getAbstractFileByPath(path);
-        if (!(file instanceof import_obsidian3.TFile)) throw error;
+        if (!(file instanceof import_obsidian.TFile)) throw error;
       }
     }
-    if (!(file instanceof import_obsidian3.TFile) || file.stat.size > 300) {
+    if (!(file instanceof import_obsidian.TFile) || file.stat.size > 300) {
       throw new Error("Another file occupies the reference path.");
     }
     const old = new TextDecoder().decode(await this.app.vault.readBinary(file));
@@ -607,7 +442,7 @@ var LibraryStorage = class {
     const existing = this.findNote(book) ?? await this.recordInFolder(book, notes, fileName) ?? (values?.organized ? await this.recordInFolder(book, values.folder + "/Notes", fileName) : void 0) ?? (values?.folder ? await this.recordInFolder(book, values.folder, fileName) : void 0);
     await this.ensureFolder(folder);
     const occupied = this.app.vault.getAbstractFileByPath(files + "/" + fileName + ".pdf");
-    const alreadyLinked = occupied instanceof import_obsidian3.TFile && occupied.stat.size <= 300 && new TextDecoder().decode(await this.app.vault.readBinary(occupied)) === book.readUrl;
+    const alreadyLinked = occupied instanceof import_obsidian.TFile && occupied.stat.size <= 300 && new TextDecoder().decode(await this.app.vault.readBinary(occupied)) === book.readUrl;
     if (occupied && !alreadyLinked && this.folderReference(values) !== occupied.path) {
       fileName = bookFileName(fileName.slice(0, 72) + " (" + book.id.slice(0, 8) + ")");
     }
@@ -622,7 +457,7 @@ var LibraryStorage = class {
       await this.app.fileManager.renameFile(existing, target);
     }
     const old = previousReference ? this.app.vault.getAbstractFileByPath(previousReference) : void 0;
-    if (values?.folder === folder && !values.organized && old instanceof import_obsidian3.TFile && old.stat.size <= 300 && !this.app.vault.getAbstractFileByPath(targetReference) && new TextDecoder().decode(await this.app.vault.readBinary(old)) === book.readUrl) {
+    if (values?.folder === folder && !values.organized && old instanceof import_obsidian.TFile && old.stat.size <= 300 && !this.app.vault.getAbstractFileByPath(targetReference) && new TextDecoder().decode(await this.app.vault.readBinary(old)) === book.readUrl) {
       await this.ensureFolder(files);
       await this.app.fileManager.renameFile(old, targetReference);
     }
@@ -633,7 +468,7 @@ var LibraryStorage = class {
   }
   async noteAt(path, book) {
     const file = this.app.vault.getAbstractFileByPath(path);
-    if (file instanceof import_obsidian3.TFile && this.isBookRecord(await this.metadata(path), book, path)) return file;
+    if (file instanceof import_obsidian.TFile && this.isBookRecord(await this.metadata(path), book, path)) return file;
   }
   async recordInFolder(book, folder, fileName) {
     const prefix = folder + "/Book record - " + fileName;
@@ -680,8 +515,8 @@ var LibraryStorage = class {
     if (!requested || !ficha.parent) throw new Error("Enter a note title.");
     const name = bookFileName(requested);
     const template = templatePath ? this.app.vault.getAbstractFileByPath(templatePath) : void 0;
-    if (templatePath && !(template instanceof import_obsidian3.TFile)) throw new Error("The study note template was not found in the vault.");
-    const body = template instanceof import_obsidian3.TFile ? await this.app.vault.read(template) : "# " + name + "\n";
+    if (templatePath && !(template instanceof import_obsidian.TFile)) throw new Error("The study note template was not found in the vault.");
+    const body = template instanceof import_obsidian.TFile ? await this.app.vault.read(template) : "# " + name + "\n";
     const notes = ficha.parent.name === "Notes" ? ficha.parent.path : ficha.parent.isRoot() ? "Notes" : ficha.parent.path + "/Notes";
     await this.ensureFolder(notes);
     const directory = notes + "/";
@@ -692,7 +527,191 @@ var LibraryStorage = class {
   }
 };
 
-// local-typescript:C:\Users\Fabricio\Documents\PluginLivrosObsidian\plugin\src\view.ts
+// local-typescript:E:\Projetos\FolioShelf\plugin\src\migration.ts
+var migrationKey = "obsidian-library-data-migration";
+var folders = ["_state", "_refs"];
+function pendingMigration(app) {
+  return app.loadLocalStorage(migrationKey) ?? void 0;
+}
+function conflict(path) {
+  return new Error("Resolve the library data conflict at " + path + " and try again.");
+}
+function entries(folder, root = folder.path) {
+  return folder.children.flatMap((child) => [
+    child.path.slice(root.length + 1) + (child instanceof import_obsidian2.TFolder ? "/" : ""),
+    ...child instanceof import_obsidian2.TFolder ? entries(child, root) : []
+  ]).sort();
+}
+async function planMigration(storage, app, input) {
+  const to = studyFolder(input, storage.root);
+  if (to === storage.root) return;
+  if (to.toLowerCase() === storage.root.toLowerCase()) throw conflict(to);
+  const moves = {};
+  let occupied;
+  for (const name of folders) {
+    const destination = to + "/" + name;
+    if (await app.vault.adapter.exists(destination, false)) {
+      if (!(app.vault.getAbstractFileByPath(destination) instanceof import_obsidian2.TFolder)) throw conflict(destination);
+      occupied ?? (occupied = destination);
+    }
+    const source = storage.root + "/" + name;
+    const file = app.vault.getAbstractFileByPath(source);
+    if (!(file instanceof import_obsidian2.TFolder) && (file || await app.vault.adapter.exists(source, false))) throw conflict(source);
+    moves[name] = file instanceof import_obsidian2.TFolder ? { phase: "pending", entries: entries(file) } : { phase: "absent", entries: [] };
+  }
+  for (let path = to; path; path = path.slice(0, Math.max(0, path.lastIndexOf("/")))) {
+    if (!(app.vault.getAbstractFileByPath(path) instanceof import_obsidian2.TFolder) && await app.vault.adapter.exists(path, false)) {
+      throw conflict(path);
+    }
+  }
+  if (occupied) {
+    const current = new LibraryStorage(app, to, false);
+    const legacy = new LibraryStorage(app, to, true);
+    const currentData = await current.hasRecognizedState();
+    const legacyData = await legacy.hasRecognizedState();
+    if (currentData === legacyData) throw conflict(occupied);
+    return {
+      storage: currentData ? current : legacy,
+      sourceHasData: Object.values(moves).some((move) => move.entries.some((entry) => !entry.endsWith("/")))
+    };
+  }
+  return { from: storage.root, to, legacy: storage.legacy, moves };
+}
+function saveMigration(app, move) {
+  app.saveLocalStorage(migrationKey, move);
+}
+async function moveLibraryData(app, storage, migration) {
+  const { from, to, moves } = migration;
+  for (const name of folders) {
+    const source = from + "/" + name;
+    const destination = to + "/" + name;
+    const step = moves[name];
+    const old = app.vault.getAbstractFileByPath(source);
+    const targetExists = await app.vault.adapter.exists(destination, false);
+    if (step.phase === "absent") {
+      if (old || await app.vault.adapter.exists(source, false)) throw conflict(source);
+      if (targetExists) throw conflict(destination);
+      continue;
+    }
+    if (step.phase !== "done" && old instanceof import_obsidian2.TFolder) {
+      if (targetExists) throw conflict(destination);
+      if (step.phase === "pending") step.entries = entries(old);
+      step.phase = "moving";
+      saveMigration(app, migration);
+      try {
+        await storage.ensureFolder(to);
+        if (await app.vault.adapter.exists(destination, false)) throw conflict(destination);
+        await app.fileManager.renameFile(old, destination);
+      } catch (error) {
+        throw new Error("Could not move " + source + " to " + destination + ". " + (error instanceof Error ? error.message : ""));
+      }
+    } else if (old || await app.vault.adapter.exists(source, false) || step.phase === "pending") {
+      throw conflict(source);
+    }
+    const target = app.vault.getAbstractFileByPath(destination);
+    if (!(target instanceof import_obsidian2.TFolder) || JSON.stringify(entries(target)) !== JSON.stringify(step.entries)) {
+      throw conflict(destination);
+    }
+    step.phase = "done";
+    saveMigration(app, migration);
+  }
+  await updateReferences(app, from, to);
+}
+async function updateReferences(app, from, to) {
+  const prefix = from + "/_refs/";
+  const newPrefix = to + "/_refs/";
+  for (const file of app.vault.getMarkdownFiles()) {
+    if (file.path.startsWith(to + "/_state/")) continue;
+    const original = await app.vault.read(file);
+    if (!original.includes(prefix)) continue;
+    const rewrite = (content) => content.replace(
+      /\[\[([^\]\n#|]+\.pdf)(?=[#|\]])/g,
+      (link, path) => path.startsWith(prefix) && idPattern.test(path.slice(prefix.length, -4)) ? "[[" + newPrefix + path.slice(prefix.length) : link
+    );
+    const header = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(original);
+    if (header?.[1].includes(prefix) && /^refPath\s*:/m.test(header[1])) {
+      const ref = (0, import_obsidian2.parseYaml)(header[1])?.refPath;
+      if (typeof ref === "string" && ref.startsWith(prefix) && ref.endsWith(".pdf") && idPattern.test(ref.slice(prefix.length, -4))) {
+        await app.fileManager.processFrontMatter(file, (data) => {
+          if (data.refPath === ref) data.refPath = newPrefix + ref.slice(prefix.length);
+        });
+      }
+    }
+    if (rewrite(original) !== original) await app.vault.process(file, rewrite);
+  }
+}
+
+// local-typescript:E:\Projetos\FolioShelf\plugin\src\remote.ts
+var import_obsidian3 = require("obsidian");
+var CatalogPendingError = class extends Error {
+};
+async function requestServer(origin, path) {
+  try {
+    return await (0, import_obsidian3.requestUrl)({ url: origin + path, throw: false });
+  } catch {
+    throw new Error(`Could not reach the library server. Open ${origin}/health on this device and check access to the private network and whether the device trusts the HTTPS certificate.`);
+  }
+}
+async function checkServer(origin) {
+  const response = await requestServer(origin, "/health");
+  if (response.status !== 200 || typeof response.json?.version !== "string") {
+    throw new Error("Unexpected server response (HTTP " + response.status + ").");
+  }
+  if (response.json.catalogReady !== true) {
+    throw new CatalogPendingError("The server is reachable. The library is indexing or the disk is unavailable. Try again after indexing finishes.");
+  }
+  const catalogVersion = response.json.catalogVersion;
+  return typeof catalogVersion === "string" && catalogVersion ? catalogVersion : void 0;
+}
+async function fetchCatalog(origin) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const books = [];
+    const cursors = /* @__PURE__ */ new Set();
+    let version;
+    let cursor = "";
+    do {
+      const response = await requestServer(origin, "/api/v1/books" + (cursor ? "?cursor=" + encodeURIComponent(cursor) : ""));
+      if (response.status === 409) break;
+      if (response.status !== 200) throw new Error("Catalog request failed (HTTP " + response.status + ").");
+      const data = response.json;
+      if (!data || typeof data.version !== "string" || typeof data.nextCursor !== "string" || version !== void 0 && version !== data.version || !validBooks(data.books, origin) || cursors.has(data.nextCursor)) {
+        throw new Error("The server returned an incompatible catalog.");
+      }
+      version = data.version;
+      books.push(...data.books);
+      cursor = data.nextCursor;
+      cursors.add(cursor);
+      if (!cursor && version !== void 0 && validBooks(books, origin)) return { version, books };
+    } while (cursor);
+  }
+  throw new Error("Could not fetch a consistent catalog version.");
+}
+async function checkPDF(url) {
+  const response = await (0, import_obsidian3.requestUrl)({ url, method: "HEAD", throw: false });
+  if (response.status === 404) throw new Error("Book not found on the server.");
+  if (response.status === 415) throw new Error("The file is incompatible with the PDF reader.");
+  if (response.status === 401 || response.status === 403) throw new Error("PDF access is unavailable on this network.");
+  if (response.status !== 200) throw new Error("PDF unavailable (HTTP " + response.status + ").");
+  if (!Object.entries(response.headers).some(([name, value]) => name.toLowerCase() === "content-type" && value.toLowerCase().startsWith("application/pdf"))) {
+    throw new Error("The server did not return a compatible PDF.");
+  }
+}
+var RemoteLibraryProvider = class {
+  constructor(origin) {
+    this.origin = origin;
+  }
+  checkVersion() {
+    return checkServer(this.origin);
+  }
+  readCatalog() {
+    return fetchCatalog(this.origin);
+  }
+  checkPDF(url) {
+    return checkPDF(url);
+  }
+};
+
+// local-typescript:E:\Projetos\FolioShelf\plugin\src\view.ts
 var import_obsidian4 = require("obsidian");
 var VIEW = "folio-shelf";
 var DETAILS_VIEW = "folio-shelf-details";
@@ -1460,14 +1479,15 @@ function chooseVaultPath(plugin, folders2, onSelect, onClose) {
   picker.setPlaceholder(folders2 ? "Search vault folders..." : "Search Markdown files...");
   picker.open();
 }
-function confirmDataMove(plugin, from, to) {
+function confirmDataMove(plugin, from, to, existing) {
   return new Promise((resolve) => {
     const modal = new import_obsidian4.Modal(plugin.app);
-    modal.setTitle("Move library data?");
-    modal.contentEl.createEl("p", { text: "From " + from + "/" });
-    modal.contentEl.createEl("p", { text: "To " + to + "/" });
-    modal.contentEl.createEl("p", { text: "Pause Fast Note Sync on all devices before moving the data." });
-    new import_obsidian4.Setting(modal.contentEl).addButton((button) => button.setButtonText("Cancel").onClick(() => modal.close())).addButton((button) => button.setButtonText("Move data").setCta().onClick(() => {
+    modal.setTitle(existing ? "Use existing library?" : "Move library data?");
+    modal.contentEl.createEl("p", { text: "Current folder: " + from + "/" });
+    modal.contentEl.createEl("p", { text: "Selected folder: " + to + "/" });
+    const description = existing ? "Load the library in the selected folder." + (existing.sourceHasData ? " Both folders contain library data. Files in the current folder will stay there." : "") : "Pause Fast Note Sync on all devices before moving the data.";
+    modal.contentEl.createEl("p", { text: description });
+    new import_obsidian4.Setting(modal.contentEl).addButton((button) => button.setButtonText("Cancel").onClick(() => modal.close())).addButton((button) => button.setButtonText(existing ? "Use existing library" : "Move data").setCta().onClick(() => {
       resolve(true);
       modal.close();
     }));
@@ -1499,7 +1519,7 @@ function renderDataStorage(settings, plugin) {
     field.removeAttribute("aria-invalid");
     update();
     try {
-      await plugin.changeDataFolder(path, (from, to) => confirmDataMove(plugin, from, to));
+      await plugin.changeDataFolder(path, (from, to, existing) => confirmDataMove(plugin, from, to, existing));
       field.value = lastSubmitted = plugin.storage.root;
     } catch (error) {
       field.setAttribute("aria-invalid", "true");
@@ -1872,7 +1892,7 @@ function renderLibrarySettings(container, plugin, onSuccess) {
   });
 }
 
-// local-typescript:C:\Users\Fabricio\Documents\PluginLivrosObsidian\plugin\src\main.ts
+// local-typescript:E:\Projetos\FolioShelf\plugin\src\main.ts
 var LOCAL_FOLDER_KEY = "obsidian-library-local-folder";
 var LibraryPlugin = class extends import_obsidian6.Plugin {
   constructor() {
@@ -2354,6 +2374,24 @@ var LibraryPlugin = class extends import_obsidian6.Plugin {
         await this.refreshTask;
         const migration2 = await planMigration(this.storage, this.app, input);
         if (!migration2) return true;
+        if ("storage" in migration2) {
+          const { root: to, legacy } = migration2.storage;
+          const from = this.storage.root;
+          if (!await confirm(from, to, { sourceHasData: migration2.sourceHasData })) return false;
+          const latest = await planMigration(this.storage, this.app, to);
+          if (!latest || !("storage" in latest) || latest.storage.legacy !== legacy || latest.sourceHasData !== migration2.sourceHasData) {
+            throw new Error("Library data changed while the confirmation was open. Try again.");
+          }
+          await this.persistSettings(void 0, latest.storage);
+          this.storage = latest.storage;
+          if (!this.localFolder) {
+            this.books = [];
+            this.catalogIdentity = void 0;
+            this.snapshotSaved = false;
+          }
+          committed = true;
+          return true;
+        }
         if (Object.values(migration2.moves).some((move) => move.phase !== "absent") && !await confirm(migration2.from, migration2.to)) return false;
         saveMigration(this.app, migration2);
         this.dataMigration = migration2;

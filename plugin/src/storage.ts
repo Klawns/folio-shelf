@@ -116,6 +116,13 @@ export class LibraryStorage {
 		if (validBooks(books, origin)) return { schema: 1, origin, version: state.version, books };
 	}
 
+	async hasRecognizedState(): Promise<boolean> {
+		// Catalog contents may be invalid while synchronization is still in progress.
+		const snapshot = await this.snapshot().catch(() => undefined);
+		return !!snapshot || this.progress().size > 0
+			|| [...this.personals().keys()].some(id => idPattern.test(id));
+	}
+
 	saveSnapshot(state: Snapshot): Promise<void> {
 		return this.write(() => this.saveSnapshotInternal(state));
 	}
