@@ -1,5 +1,11 @@
 # Folio Shelf changelog
 
+## 0.2.34
+
+### Book records
+
+- New book records show their purpose in Obsidian's inline title, for example **Book record - Designing Data-Intensive Applications**. Existing records keep their filenames.
+
 ## 0.2.33
 
 ### Study notes

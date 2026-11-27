@@ -1,7 +1,7 @@
 {
   "id": "folio-shelf",
   "name": "Folio Shelf",
-  "version": "0.2.33",
+  "version": "0.2.34",
   "minAppVersion": "1.8.0",
   "description": "Browse local or remote PDF libraries, track reading progress, and link study notes.",
   "author": "Fabricio",
