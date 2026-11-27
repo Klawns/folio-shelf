@@ -1,5 +1,12 @@
 # Folio Shelf changelog
 
+## 0.2.35
+
+### Library storage
+
+- Use **Use existing library** to open a Folio Shelf library that has already synced to another device.
+- When both folders contain library data, the confirmation shows both paths and preserves the files in each folder.
+
 ## 0.2.34
 
 ### Book records
